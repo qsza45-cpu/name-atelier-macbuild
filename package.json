@@ -1,0 +1,71 @@
+{
+  "name": "name-atelier",
+  "productName": "NAME ATELIER",
+  "private": true,
+  "version": "0.1.0",
+  "description": "NAME ATELIER - 작명 아틀리에 (웹소설 캐릭터 이름 생성기, 오프라인)",
+  "author": "TALEUNE",
+  "license": "UNLICENSED",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "npm run build && electron .",
+    "check:data": "node scripts/check-data.mjs",
+    "test": "node tests/engine.test.mjs",
+    "dist:win": "npm run build && electron-builder --win nsis zip --publish never",
+    "dist:mac": "npm run build && electron-builder --mac zip dmg --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "electron": "^38.8.6",
+    "electron-builder": "26.0.12",
+    "esbuild": "^0.25.12",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "5.9"
+  },
+  "build": {
+    "appId": "com.taleune.nameatelier",
+    "productName": "NAME ATELIER",
+    "copyright": "© 2026 TALEUNE",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json",
+      "!dist/**/*.map"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "assets/icon/app_icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "NAME ATELIER",
+      "artifactName": "NAME-ATELIER-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "zip",
+        "dmg"
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "icon": "assets/icon/app_icon_1024.png"
+    },
+    "dmg": {
+      "sign": false
+    }
+  }
+}

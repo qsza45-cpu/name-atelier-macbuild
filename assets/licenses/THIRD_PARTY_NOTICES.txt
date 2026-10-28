@@ -1,0 +1,7 @@
+NAME ATELIER — 제3자 고지 (Third-party notices)
+
+- Electron — MIT License — https://github.com/electron/electron
+- React, React DOM — MIT License — https://github.com/facebook/react
+- 나눔명조 / 나눔고딕 (NanumMyeongjo, NanumGothic) — SIL Open Font License 1.1 — 원문: OFL-NanumMyeongjo.txt, OFL-NanumGothic.txt
+- 아이콘: 이 프로그램용으로 직접 그린 SVG (외부 라이브러리 없음)
+- 이름 데이터: 공개 통계·자료를 참고해 직접 작성·검수한 목록 (출처: 소스 저장소 SOURCES.md)

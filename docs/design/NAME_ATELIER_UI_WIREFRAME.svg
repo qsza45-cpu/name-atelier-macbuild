@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 760" font-family="Malgun Gothic, NanumGothic, sans-serif">
+  <rect width="1240" height="760" fill="#ffffff"/>
+  <text x="20" y="28" font-size="16" font-weight="700" fill="#2A2026">NAME ATELIER — UI 와이어프레임 v1 (기본 창 960 × 680 CSS px, 이름 3개 생성)</text>
+  <g transform="translate(20,50)">
+    <!-- window -->
+    <rect x="0" y="0" width="960" height="680" fill="#F4EDE2" stroke="#2A2026" stroke-width="2"/>
+    <rect x="0" y="0" width="960" height="680" fill="none" stroke="#B48A42" stroke-dasharray="6 4" opacity=".0"/>
+    <!-- background safe area (70%) -->
+    <rect x="144" y="102" width="672" height="476" fill="none" stroke="#B48A42" stroke-dasharray="4 4"/>
+    <text x="150" y="116" font-size="10" fill="#B48A42">배경 중앙 안전 영역 70% (장식 금지)</text>
+    <!-- header -->
+    <rect x="0" y="0" width="960" height="84" fill="#EFE5D6" opacity=".7"/>
+    <rect x="32" y="22" width="40" height="40" rx="8" fill="#7B2D4A"/>
+    <text x="52" y="47" font-size="9" fill="#fff" text-anchor="middle">심볼</text>
+    <rect x="84" y="24" width="220" height="36" fill="none" stroke="#2A2026" stroke-dasharray="3 3"/>
+    <text x="194" y="47" font-size="13" fill="#2A2026" text-anchor="middle" letter-spacing="3">NAME ✦ ATELIER</text>
+    <text x="320" y="40" font-size="14" fill="#2A2026">작명 아틀리에</text>
+    <text x="320" y="58" font-size="11" fill="#6B5C64">웹소설 캐릭터 이름 공방</text>
+    <text x="940" y="47" font-size="10" fill="#6B5C64" text-anchor="end">① 머리 84</text>
+    <!-- selectors -->
+    <g font-size="11">
+      <text x="32" y="111" fill="#6B5C64">장르</text>
+      <g transform="translate(96,94)">
+        <rect width="64" height="26" rx="13" fill="#7B2D4A"/><text x="32" y="17" fill="#FFF6EC" text-anchor="middle">판타지</text>
+        <rect x="72" width="64" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/><text x="104" y="17" fill="#6B5C64" text-anchor="middle">로맨스</text>
+        <rect x="144" width="64" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/><text x="176" y="17" fill="#6B5C64" text-anchor="middle">현대물</text>
+        <rect x="216" width="64" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/><text x="248" y="17" fill="#6B5C64" text-anchor="middle">무협</text>
+      </g>
+      <text x="32" y="145" fill="#6B5C64">이름 스타일</text>
+      <g transform="translate(96,128)">
+        <rect width="186" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/>
+        <text x="31" y="17" fill="#6B5C64" text-anchor="middle">한국</text>
+        <text x="93" y="17" fill="#6B5C64" text-anchor="middle">동양풍</text>
+        <path d="M124 0 H173 A13 13 0 0 1 173 26 H124 Z" fill="#7B2D4A"/><text x="155" y="17" fill="#FFF6EC" text-anchor="middle">서양풍</text>
+        <line x1="196" y1="5" x2="196" y2="21" stroke="#E2D3BF"/>
+        <rect x="206" width="56" height="26" rx="13" fill="#7B2D4A"/><text x="234" y="17" fill="#FFF6EC" text-anchor="middle">로판식</text>
+        <rect x="268" width="56" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/><text x="296" y="17" fill="#6B5C64" text-anchor="middle">미국식</text>
+        <rect x="330" width="56" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/><text x="358" y="17" fill="#6B5C64" text-anchor="middle">영국식</text>
+        <rect x="392" width="64" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/><text x="424" y="17" fill="#6B5C64" text-anchor="middle">프랑스식</text>
+        <rect x="462" width="56" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/><text x="490" y="17" fill="#6B5C64" text-anchor="middle">독일식</text>
+        <rect x="524" width="96" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/><text x="572" y="17" fill="#6B5C64" text-anchor="middle">창작 판타지식</text>
+        <text x="630" y="17" fill="#B48A42" font-size="10">← 분류(한국/동양풍/서양풍)를 고르면 그 안의 스타일만 보임</text>
+      </g>
+      <text x="32" y="179" fill="#6B5C64">성별</text>
+      <g transform="translate(96,162)">
+        <rect width="56" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/><text x="28" y="17" fill="#6B5C64" text-anchor="middle">남성</text>
+        <rect x="64" width="56" height="26" rx="13" fill="#7B2D4A"/><text x="92" y="17" fill="#FFF6EC" text-anchor="middle">여성</text>
+        <rect x="128" width="80" height="26" rx="13" fill="#FFFAF2" stroke="#E2D3BF"/><text x="168" y="17" fill="#6B5C64" text-anchor="middle">성별 무관</text>
+      </g>
+      <text x="940" y="145" fill="#6B5C64" text-anchor="end">② 선택 띠 (칩 = 코드)</text>
+    </g>
+    <!-- cards -->
+    <g font-size="10">
+      <g transform="translate(64,206)">
+        <rect width="264" height="320" rx="18" fill="#FFFAF2" stroke="#B48A42" stroke-width="2"/>
+        <rect x="18" y="18" width="228" height="284" fill="none" stroke="#B48A42" stroke-dasharray="2 3" opacity=".7"/>
+        <rect x="26" y="26" width="212" height="268" fill="#7B2D4A" opacity=".05"/>
+        <rect x="72" y="26" width="120" height="28" fill="none" stroke="#B48A42"/><text x="132" y="44" fill="#B48A42" text-anchor="middle">card_crest 120×28</text>
+        <text x="132" y="112" font-size="28" font-weight="700" fill="#2A2026" text-anchor="middle" font-family="NanumMyeongjo, serif">샬럿 펨버턴</text>
+        <text x="132" y="136" font-size="13" fill="#6B5C64" text-anchor="middle">Charlotte Pemberton</text>
+        <line x1="112" y1="154" x2="152" y2="154" stroke="#B48A42"/>
+        <text x="132" y="178" font-size="11" fill="#6B5C64" text-anchor="middle">로맨스 · 로판식 · 여성</text>
+        <rect x="30" y="256" width="36" height="36" rx="10" fill="none" stroke="#6B5C64"/><text x="48" y="278" fill="#6B5C64" text-anchor="middle">복사</text>
+        <rect x="198" y="256" width="36" height="36" rx="10" fill="none" stroke="#7B2D4A"/><text x="216" y="279" font-size="16" fill="#7B2D4A" text-anchor="middle">☆</text>
+      </g>
+      <g transform="translate(348,206)">
+        <rect width="264" height="320" rx="18" fill="#FFFAF2" stroke="#B48A42" stroke-width="2"/>
+        <rect x="18" y="18" width="228" height="284" fill="none" stroke="#B48A42" stroke-dasharray="2 3" opacity=".7"/>
+        <rect x="72" y="26" width="120" height="28" fill="none" stroke="#B48A42"/>
+        <text x="132" y="100" font-size="24" font-weight="700" fill="#2A2026" text-anchor="middle" font-family="NanumMyeongjo, serif">프리드리히</text>
+        <text x="132" y="130" font-size="24" font-weight="700" fill="#2A2026" text-anchor="middle" font-family="NanumMyeongjo, serif">폰 아이헨도르프</text>
+        <text x="132" y="154" font-size="13" fill="#6B5C64" text-anchor="middle">Friedrich von Eichendorff</text>
+        <line x1="112" y1="170" x2="152" y2="170" stroke="#B48A42"/>
+        <text x="132" y="192" font-size="11" fill="#6B5C64" text-anchor="middle">긴 이름 → 24px · 2줄</text>
+        <rect x="30" y="256" width="36" height="36" rx="10" fill="none" stroke="#6B5C64"/><text x="48" y="278" fill="#6B5C64" text-anchor="middle">복사</text>
+        <rect x="198" y="256" width="36" height="36" rx="10" fill="#7B2D4A"/><text x="216" y="279" font-size="16" fill="#FFF6EC" text-anchor="middle">★</text>
+        <rect x="186" y="30" width="52" height="18" rx="9" fill="#7B2D4A"/><text x="212" y="43" fill="#FFF6EC" text-anchor="middle">보관됨</text>
+      </g>
+      <g transform="translate(632,206)">
+        <rect width="264" height="320" rx="18" fill="#6A2440"/>
+        <rect x="18" y="18" width="228" height="284" rx="6" fill="none" stroke="#D6B46E"/>
+        <text x="132" y="150" font-size="12" fill="#F2EADF" text-anchor="middle">card_back (뒤집히는 중 / 빈 카드)</text>
+        <text x="132" y="172" font-size="12" fill="#F2EADF" text-anchor="middle">"이름을 뽑아 보세요"</text>
+      </g>
+      <text x="64" y="544" fill="#6B5C64">③ 무대: 카드 264×320 (최소 208×300 · 최대 300×340), 간격 20, 테두리 띠 18, 글자 안전 영역 212×268</text>
+    </g>
+    <!-- reroll button -->
+    <rect x="350" y="556" width="260" height="56" rx="28" fill="#7B2D4A" stroke="#B48A42" stroke-width="2"/>
+    <text x="480" y="590" font-size="18" font-weight="700" fill="#FFF6EC" text-anchor="middle">다시 뽑기 ✨</text>
+    <text x="940" y="590" font-size="10" fill="#6B5C64" text-anchor="end">④ 260×56 (코드)</text>
+    <!-- footer -->
+    <rect x="0" y="628" width="960" height="52" fill="#EFE5D6"/>
+    <g font-size="12" fill="#2A2026">
+      <text x="32" y="659">★ 즐겨찾기 12</text>
+      <text x="170" y="659">내보내기 (TXT · CSV · 복사)</text>
+      <text x="780" y="659">설정</text>
+      <text x="850" y="659">프로그램 정보</text>
+    </g>
+  </g>
+  <!-- legend -->
+  <g transform="translate(1000,60)" font-size="12" fill="#2A2026">
+    <text y="0" font-weight="700">범례</text>
+    <rect y="14" width="14" height="14" fill="none" stroke="#B48A42" stroke-dasharray="4 4"/><text x="22" y="26">배경 안전 영역</text>
+    <rect y="40" width="14" height="14" fill="none" stroke="#B48A42" stroke-dasharray="2 3"/><text x="22" y="52">카드 테두리 띠(9-slice inset 18)</text>
+    <rect y="66" width="14" height="14" fill="#7B2D4A" opacity=".15"/><text x="22" y="78">글자 안전 영역</text>
+    <text y="112" font-weight="700">이미지 자산 자리</text>
+    <text y="132">· 배경 bg_main_*</text>
+    <text y="150">· 심볼 · 워드마크</text>
+    <text y="168">· card_frame_* (테두리)</text>
+    <text y="186">· card_crest (상단)</text>
+    <text y="204">· card_back (뒷면)</text>
+    <text y="238" font-weight="700">코드로 그리는 것</text>
+    <text y="258">· 칩 · 버튼 · 글자</text>
+    <text y="276">· 아이콘(SVG) · 메뉴</text>
+    <text y="294">· ★ · 보관됨 배지</text>
+    <text y="312">· 반짝임 · 뒤집기 효과</text>
+    <text y="346" font-weight="700">동작</text>
+    <text y="366">· 한 번에 3개</text>
+    <text y="384">· 즐겨찾기 카드는</text>
+    <text y="402">  다시 뽑아도 유지</text>
+    <text y="420">· 카드 뒤집기 450ms</text>
+    <text y="438">  (끄기 가능)</text>
+    <text y="472" font-weight="700">하단 서랍</text>
+    <text y="492">즐겨찾기: 오른쪽에서</text>
+    <text y="510">360px 폭 서랍이 열림</text>
+  </g>
+</svg>

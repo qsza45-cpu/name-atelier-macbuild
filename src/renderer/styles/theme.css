@@ -1,0 +1,67 @@
+/* NAME ATELIER design tokens. Values match docs/NAME_ATELIER_DESIGN_SPEC.md §6.
+   Design assets (assets/design → dist/renderer/design) are referenced here only, so swapping a file needs no code change.
+   A missing image simply doesn't paint and the code-drawn fallback underneath shows. */
+
+@font-face { font-family: 'NanumMyeongjo'; src: url('../fonts/NanumMyeongjo-Regular.ttf'); font-weight: 400; }
+@font-face { font-family: 'NanumMyeongjo'; src: url('../fonts/NanumMyeongjo-Bold.ttf'); font-weight: 700; }
+@font-face { font-family: 'NanumGothic'; src: url('../fonts/NanumGothic-Regular.ttf'); font-weight: 400; }
+@font-face { font-family: 'NanumGothic'; src: url('../fonts/NanumGothic-Bold.ttf'); font-weight: 700; }
+
+:root {
+  --font-ui: 'NanumGothic', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+  --font-name: 'NanumMyeongjo', 'Batang', 'AppleMyungjo', serif;
+  --font-latin: 'Georgia', 'Times New Roman', serif;
+
+  --radius-card: 18px;
+  --radius-chip: 999px;
+  --card-inset: 18px; /* 9-slice band; the PNG is @3x with a 54px inset */
+  --flip-ms: 220ms;
+  --stagger-ms: 60ms;
+}
+
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4ede2;
+  --surface: #fffaf2;
+  --surface-2: #f8f1e6;
+  --text: #2a2026;
+  --muted: #6b5c64;
+  --accent: #7b2d4a;
+  --accent-hover: #6a2440;
+  --accent-ink: #fff6ec;
+  --gold: #b48a42;
+  --gold-soft: #d9be84;
+  --line: #e2d3bf;
+  --shadow: 0 10px 28px rgba(74, 40, 52, 0.12), 0 2px 6px rgba(74, 40, 52, 0.08);
+  --shadow-hover: 0 16px 36px rgba(74, 40, 52, 0.18), 0 3px 8px rgba(74, 40, 52, 0.1);
+  --veil: rgba(244, 237, 226, 0);
+  --bg-fallback: radial-gradient(ellipse at 20% 0%, #fbf5ec 0%, transparent 55%), radial-gradient(ellipse at 100% 100%, #ead9c4 0%, transparent 50%), linear-gradient(#f4ede2, #efe5d6);
+  --bg-image: url('../design/bg_main_light.jpg');
+  --card-frame: url('../design/card_frame_light.png');
+  --wordmark: url('../design/logo_wordmark_dark.png');
+  --card-back-fallback: linear-gradient(155deg, #7b2d4a 0%, #5a1f37 100%);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #16111a;
+  --surface: #211a26;
+  --surface-2: #2a2130;
+  --text: #f2eadf;
+  --muted: #b9aab3;
+  --accent: #e59bb5;
+  --accent-hover: #efb2c7;
+  --accent-ink: #2a1220;
+  --gold: #d6b46e;
+  --gold-soft: #8f7444;
+  --line: #3b3040;
+  --shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-hover: 0 16px 40px rgba(0, 0, 0, 0.55), 0 3px 8px rgba(0, 0, 0, 0.35);
+  --veil: rgba(22, 17, 26, 0.12);
+  --bg-fallback: radial-gradient(ellipse at 85% 0%, rgba(214, 180, 110, 0.12) 0%, transparent 45%), radial-gradient(ellipse at 0% 100%, #2b2132 0%, transparent 55%), linear-gradient(#16111a, #1c1522);
+  --bg-image: url('../design/bg_main_dark.jpg');
+  --card-frame: url('../design/card_frame_dark.png');
+  --wordmark: url('../design/logo_wordmark_light.png');
+  --card-back-fallback: linear-gradient(155deg, #5a1f37 0%, #3a1426 100%);
+}
