@@ -1,5 +1,6 @@
-# macOS build of the USER app (NAME ATELIER). Runs only when started by hand (Actions → macOS build → Run workflow)
-# or for a v* tag, to keep macOS runner minutes low. The admin key generator is Windows-only and never built here;
+# macOS builds of the USER app (NAME ATELIER). Runs only when started by hand (Actions → macOS build → Run workflow)
+# or for a v* tag, to keep macOS runner minutes low. Each CPU type is built and tested on its own kind of Mac:
+# Apple Silicon on macos-14, Intel on macos-13. The admin key generator is Windows-only and never built here;
 # no signing key exists on CI — the app only carries the public key.
 name: macOS build
 
@@ -13,7 +14,17 @@ permissions:
 
 jobs:
   mac:
-    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+            label: AppleSilicon
+          - runner: macos-13
+            arch: x64
+            label: Intel
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     env:
       CI: 'true'
@@ -44,18 +55,22 @@ jobs:
           npm run test:e2e
           npm run test:license-e2e
 
-      - name: Build macOS app (Apple Silicon + Intel, ad-hoc signed, not notarized)
-        run: npm run dist:mac
+      - name: Build macOS app (${{ matrix.label }}, ad-hoc signed, not notarized)
+        run: |
+          npm run build
+          node scripts/check-release.mjs
+          npx electron-builder --mac zip dmg --${{ matrix.arch }} --publish never
+          node scripts/check-release.mjs --packaged
 
-      - name: Launch the packaged app
+      - name: Launch the packaged app (native on this Mac)
         run: node tests/launch-packaged.mjs
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: NAME-ATELIER-mac
+          name: NAME-ATELIER-mac-${{ matrix.label }}
           path: |
             release/*.dmg
             release/*-mac.zip
-          retention-days: 14
+          retention-days: 7
           if-no-files-found: error
