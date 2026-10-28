@@ -5,8 +5,9 @@
 // 律·烈처럼 모음·ㄴ 받침 뒤에서 '율·열'이 되는 음절은 ko에 본음(률·렬)을 두었다(엔진에서 처리).
 // '지·위·병·발·귀·애·로·등' 음절은 성·다른 음절과 붙어 비속어·어색한 낱말(황보+지…, 자+위…, 사마+귀…)이 되기 쉬워 넣지 않았다.
 
-export interface HanjaSyl { ko: string; hanja: string; g: 'm' | 'f' | 'u'; initial?: string }
-export interface HanjaSurname { ko: string; hanja: string; initial?: string }
+// hun = 훈(뜻), shown with the reading as 「白 흰 백」.
+export interface HanjaSyl { ko: string; hanja: string; g: 'm' | 'f' | 'u'; initial?: string; hun?: string }
+export interface HanjaSurname { ko: string; hanja: string; initial?: string; hun?: string }
 export interface HanjaPools { surnames: HanjaSurname[]; given: HanjaSyl[] }
 
 export const MURIM: HanjaPools = {
