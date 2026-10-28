@@ -27,6 +27,9 @@ await Promise.all([
   }),
 ]);
 
+// Key-entry screen: its own small bundle, so the name engine only loads after the app is licensed.
+await build({ ...common, entryPoints: ['src/renderer/license.ts'], outfile: 'dist/renderer/license.js', platform: 'browser', format: 'iife', target: 'chrome138', minify: true });
+cpSync(join(root, 'src/renderer/license.html'), join(dist, 'renderer/license.html'));
 cpSync(join(root, 'src/renderer/index.html'), join(dist, 'renderer/index.html'));
 cpSync(join(root, 'src/renderer/styles'), join(dist, 'renderer/styles'), { recursive: true });
 cpSync(join(root, 'assets/fonts'), join(dist, 'renderer/fonts'), { recursive: true });

@@ -4,6 +4,9 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, re
 import { join } from 'node:path';
 import { DEFAULT_SETTINGS, DEFAULT_WORK, MAX_FAVORITES, type Favorite, type Settings, type StoreData, type WorkSettings } from '../shared/types';
 import { GENDERS, GENRES, REGIONS, STYLE_OPTIONS } from '../engine/generate';
+import { encodeKey, parseKey } from '../license/format';
+import { LICENSE_PUBLIC_KEY_B64 } from '../license/publicKey';
+import { checkLicense, LICENSE_MESSAGES, publicKeyFromBase64 } from '../license/verify';
 
 // Tests point the store elsewhere so they never touch the real favourites.
 if (process.env.NAME_ATELIER_HOME) app.setPath('userData', process.env.NAME_ATELIER_HOME);
@@ -125,6 +128,38 @@ function writeStore(): { ok: boolean; error?: string } {
   return { ok: false, error };
 }
 
+// ------------------------------------------------------------------ 오프라인 인증
+// The app opens its main screen only after a stored license key's signature checks out against the embedded public
+// key — on every launch, so an edited license.json or a bare "authenticated" flag is never enough.
+// Dev/test runs (not packaged) may swap in a test public key; packaged builds ignore the variable.
+const licensePublicB64 = (!app.isPackaged && process.env.NAME_ATELIER_LICENSE_PUBKEY) || LICENSE_PUBLIC_KEY_B64;
+const licensePublicKey = licensePublicB64 !== 'PLACEHOLDER' ? publicKeyFromBase64(licensePublicB64) : null;
+const licensePath = () => join(app.getPath('userData'), 'license.json');
+let licensed = false;
+let licenseId = '';
+
+type LicenseState = 'ok' | 'none' | 'corrupt';
+function readLicense(): LicenseState {
+  if (!existsSync(licensePath())) return 'none';
+  try {
+    const raw = JSON.parse(readFileSync(licensePath(), 'utf8').replace(/^﻿/, ''));
+    if (!licensePublicKey || typeof raw?.key !== 'string') return 'corrupt';
+    const r = checkLicense(raw.key, licensePublicKey);
+    if (!r.ok) return 'corrupt';
+    licenseId = r.keyId;
+    return 'ok';
+  } catch {
+    return 'corrupt';
+  }
+}
+
+function saveLicense(key: string) {
+  mkdirSync(app.getPath('userData'), { recursive: true });
+  const tmp = `${licensePath()}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ version: 1, key, activatedAt: new Date().toISOString() }, null, 2), 'utf8');
+  renameSync(tmp, licensePath());
+}
+
 // Test runs (screenshot runs, or NAME_ATELIER_DISPLAY=2) open on the second monitor so they never cover the
 // user's work on the main one. Without a second monitor a test run stops instead of falling back to the main screen.
 const shot = !app.isPackaged && process.env.NAME_ATELIER_SHOT;
@@ -181,9 +216,19 @@ function createWindow() {
   }
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  // Screenshot runs load the page with ?test=1 so the renderer exposes its share-image renderer for checks.
-  win.loadFile(join(__dirname, 'renderer', 'index.html'), shot ? { query: { test: '1' } } : undefined);
+  loadPage(win);
 }
+
+/** Main screen when licensed, otherwise the key-entry screen (the name engine isn't even loaded until then). */
+function loadPage(win: BrowserWindow, reason: LicenseState = licenseState) {
+  if (licensed) {
+    // Screenshot runs load the page with ?test=1 so the renderer exposes its share-image renderer for checks.
+    win.loadFile(join(__dirname, 'renderer', 'index.html'), shot ? { query: { test: '1' } } : undefined);
+  } else {
+    win.loadFile(join(__dirname, 'renderer', 'license.html'), { query: { reason } });
+  }
+}
+let licenseState: LicenseState = 'none';
 
 // One instance only: two windows would each hold their own copy of the store and overwrite each other's favourites.
 const primary = app.requestSingleInstanceLock();
@@ -199,6 +244,8 @@ app.on('second-instance', () => {
 app.whenReady().then(() => {
   if (!primary) return;
   store = readStore();
+  licenseState = readLicense();
+  licensed = licenseState === 'ok';
   // Block every network request and permission prompt: the app is offline by design and needs no device access.
   session.defaultSession.webRequest.onBeforeRequest((d, cb) => cb({ cancel: !/^(file|devtools|data|blob):/.test(d.url) }));
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
@@ -210,17 +257,42 @@ app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
   }
 
-  ipcMain.handle('store:load', () => store);
-  ipcMain.handle('store:favorites', (_e, list: unknown) => {
+  // Key entry (the only calls the license screen can make).
+  ipcMain.handle('license:status', () => ({ licensed, reason: licenseState }));
+  ipcMain.handle('license:paste', () => clipboard.readText().slice(0, 2000));
+  ipcMain.handle('license:activate', (e, text: string) => {
+    if (!licensePublicKey) return { ok: false, message: LICENSE_MESSAGES.signature };
+    const r = checkLicense(String(text ?? '').slice(0, 2000), licensePublicKey);
+    if (!r.ok) return { ok: false, message: LICENSE_MESSAGES[r.reason] };
+    const p = parseKey(text);
+    if (!p.ok) return { ok: false, message: LICENSE_MESSAGES[p.reason] };
+    saveLicense(encodeKey(p.payload, p.signature)); // store the canonical form, not the pasted whitespace
+    licensed = true;
+    licenseState = 'ok';
+    licenseId = r.keyId;
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (win) setTimeout(() => loadPage(win), 900); // let the success message show briefly
+    return { ok: true };
+  });
+
+  // Everything below serves the main screen and refuses to run before the app is licensed.
+  const handle = (channel: string, fn: (...args: any[]) => unknown) =>
+    ipcMain.handle(channel, (...args) => {
+      if (!licensed) throw new Error('unlicensed');
+      return fn(...args);
+    });
+
+  handle('store:load', () => store);
+  handle('store:favorites', (_e, list: unknown) => {
     store.favorites = cleanFavorites(list);
     return writeStore();
   });
-  ipcMain.handle('store:settings', (_e, s: unknown) => {
+  handle('store:settings', (_e, s: unknown) => {
     store.settings = cleanSettings(s);
     return writeStore();
   });
-  ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(String(text ?? '').slice(0, 1_000_000)));
-  ipcMain.handle('file:export', async (e, kind: 'txt' | 'csv', content: string, defaultName: string) => {
+  handle('clipboard:write', (_e, text: string) => clipboard.writeText(String(text ?? '').slice(0, 1_000_000)));
+  handle('file:export', async (e, kind: 'txt' | 'csv', content: string, defaultName: string) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     const filters = kind === 'csv' ? [{ name: 'CSV (UTF-8)', extensions: ['csv'] }] : [{ name: '텍스트 (UTF-8)', extensions: ['txt'] }];
     const opts = { title: kind === 'csv' ? 'CSV로 저장' : 'TXT로 저장', defaultPath: join(app.getPath('documents'), defaultName), filters };
@@ -235,13 +307,13 @@ app.whenReady().then(() => {
     return { saved: true, path: r.filePath };
   });
   // file:// images would taint the share-image canvas, so the renderer gets design/partner images as data URLs.
-  ipcMain.handle('asset:dataUrl', (_e, rel: string) => {
+  handle('asset:dataUrl', (_e, rel: string) => {
     if (typeof rel !== 'string' || !/^(design|partner)\/[a-z0-9_]+\.(png|jpg)$/.test(rel)) return null;
     const file = join(__dirname, 'renderer', rel);
     if (!existsSync(file)) return null;
     return `data:image/${rel.endsWith('.jpg') ? 'jpeg' : 'png'};base64,${readFileSync(file).toString('base64')}`;
   });
-  ipcMain.handle('file:saveImage', async (e, dataUrl: string, defaultName: string) => {
+  handle('file:saveImage', async (e, dataUrl: string, defaultName: string) => {
     const m = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
     if (!m) return { saved: false, error: 'invalid image' };
     const win = BrowserWindow.fromWebContents(e.sender);
@@ -255,7 +327,7 @@ app.whenReady().then(() => {
     }
     return { saved: true, path: r.filePath };
   });
-  ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataPath: storePath(), platform: process.platform }));
+  handle('app:info', () => ({ version: app.getVersion(), dataPath: storePath(), platform: process.platform, licenseId }));
 
   createWindow();
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());

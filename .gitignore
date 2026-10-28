@@ -4,3 +4,5 @@ release/
 test-output/
 *.log
 tests/last-pool-sizes.json
+dist-admin/
+release-admin/

@@ -91,7 +91,7 @@ export function App() {
   const [avoidDraft, setAvoidDraft] = useState('');
   const [imaging, setImaging] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [info, setInfo] = useState<{ version: string; dataPath: string; platform: string } | null>(null);
+  const [info, setInfo] = useState<{ version: string; dataPath: string; platform: string; licenseId?: string } | null>(null);
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches);
   const [reducedMotion, setReducedMotion] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const history = useRef(new Set<string>()); // every id shown this session, to avoid repeats
@@ -1079,7 +1079,10 @@ export function App() {
               {symbol}
               {wordmark}
             </div>
-            <p style={{ color: 'var(--text)' }}>작명 아틀리에 · 버전 {info?.version}</p>
+            <p style={{ color: 'var(--text)' }}>
+              작명 아틀리에 · 버전 {info?.version}
+              {info?.licenseId && <span className="work-tag"> 인증됨 · 키 ID {info.licenseId}</span>}
+            </p>
             <ul>
               <li>인터넷 연결, 로그인, 서버 없이 이 컴퓨터 안에서만 작동합니다.</li>
               <li>즐겨찾기와 설정은 이 컴퓨터에만 저장됩니다.{info && <br />}{info?.dataPath}</li>

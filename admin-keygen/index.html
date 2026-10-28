@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'" />
+    <title>NAME ATELIER 인증키 생성기 (관리자용)</title>
+    <link rel="stylesheet" href="keygen.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>NAME ATELIER 인증키 생성기</h1>
+        <p>관리자 전용 · 사용자에게 배포하지 마세요 · 인터넷 없이 작동</p>
+      </div>
+    </header>
+
+    <section class="panel" id="key-panel" aria-live="polite">
+      <h2>서명 키</h2>
+      <div id="key-status">확인 중…</div>
+      <div class="actions" id="key-actions"></div>
+    </section>
+
+    <section class="panel" id="issue-panel">
+      <h2>인증키 만들기</h2>
+      <form id="issue-form" class="row">
+        <label for="count">개수</label>
+        <input id="count" type="number" min="1" max="100" value="10" required />
+        <span class="hint">1~100개 · 모두 서로 다른 키 ID</span>
+        <button type="submit" class="primary" id="issue-btn">생성</button>
+      </form>
+      <div id="issue-msg" class="msg"></div>
+      <div class="table-wrap">
+        <table id="keys">
+          <thead>
+            <tr><th>번호</th><th>키 ID</th><th>인증키</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button id="copy-btn" disabled>목록 복사</button>
+        <button id="txt-btn" disabled>TXT 저장</button>
+        <button id="csv-btn" disabled>CSV 저장 (키 ID 포함)</button>
+        <span id="count-label" class="hint"></span>
+      </div>
+    </section>
+
+    <div id="toast" role="status" hidden></div>
+    <script src="keygen.js"></script>
+  </body>
+</html>

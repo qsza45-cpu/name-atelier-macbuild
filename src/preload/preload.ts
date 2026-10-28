@@ -11,6 +11,11 @@ const api: AtelierApi = {
   saveImage: (dataUrl, name) => ipcRenderer.invoke('file:saveImage', dataUrl, name),
   assetDataUrl: (rel) => ipcRenderer.invoke('asset:dataUrl', rel),
   info: () => ipcRenderer.invoke('app:info'),
+  license: {
+    status: () => ipcRenderer.invoke('license:status'),
+    paste: () => ipcRenderer.invoke('license:paste'),
+    activate: (key) => ipcRenderer.invoke('license:activate', key),
+  },
 };
 
 contextBridge.exposeInMainWorld('atelier', api);

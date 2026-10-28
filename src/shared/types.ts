@@ -76,5 +76,10 @@ export interface AtelierApi {
   exportFile(kind: 'txt' | 'csv', content: string, defaultName: string): Promise<{ saved: boolean; path?: string; error?: string }>;
   saveImage(pngDataUrl: string, defaultName: string): Promise<{ saved: boolean; path?: string; error?: string }>;
   assetDataUrl(rel: string): Promise<string | null>;
-  info(): Promise<{ version: string; dataPath: string; platform: string }>;
+  info(): Promise<{ version: string; dataPath: string; platform: string; licenseId?: string }>;
+  license: {
+    status(): Promise<{ licensed: boolean; reason: 'ok' | 'none' | 'corrupt' }>;
+    paste(): Promise<string>;
+    activate(key: string): Promise<{ ok: boolean; message?: string }>;
+  };
 }

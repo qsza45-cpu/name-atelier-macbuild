@@ -2,7 +2,7 @@
   "name": "name-atelier",
   "productName": "NAME ATELIER",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "NAME ATELIER - 작명 아틀리에 (웹소설 캐릭터 이름 생성기, 오프라인)",
   "author": "TALEUNE",
   "license": "UNLICENSED",
@@ -14,8 +14,14 @@
     "check:data": "node scripts/check-data.mjs",
     "test": "node tests/engine.test.mjs",
     "test:e2e": "node tests/e2e.mjs",
-    "dist:win": "npm run build && electron-builder --win nsis zip --publish never",
-    "dist:mac": "npm run build && electron-builder --mac zip dmg --publish never"
+    "dist:win": "npm run build && node scripts/check-release.mjs && electron-builder --win nsis zip --publish never && node scripts/check-release.mjs --packaged",
+    "dist:mac": "npm run build && electron-builder --mac zip dmg --publish never",
+    "test:license": "node tests/license.test.mjs",
+    "test:license-e2e": "node tests/license-e2e.mjs",
+    "test:keygen-e2e": "node tests/keygen-e2e.mjs",
+    "build:admin": "node scripts/build-admin.mjs",
+    "start:admin": "npm run build:admin && electron dist-admin/main.js",
+    "dist:admin": "npm run build:admin && electron-builder --config admin-keygen/electron-builder.json --win zip --publish never"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

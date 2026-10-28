@@ -1,0 +1,27 @@
+{
+  "appId": "com.taleune.nameatelier.keygen",
+  "productName": "NAME ATELIER Keygen",
+  "copyright": "© 2026 TALEUNE",
+  "directories": {
+    "output": "release-admin"
+  },
+  "files": [
+    "dist-admin/**",
+    "package.json",
+    "!dist-admin/**/*.map"
+  ],
+  "extraMetadata": {
+    "name": "name-atelier-keygen",
+    "productName": "NAME ATELIER Keygen",
+    "description": "NAME ATELIER 인증키 생성기 (관리자 전용)",
+    "version": "1.0.0",
+    "main": "dist-admin/main.js"
+  },
+  "npmRebuild": false,
+  "electronLanguages": ["ko", "en-US", "en"],
+  "compression": "maximum",
+  "win": {
+    "target": ["zip"],
+    "icon": "assets/icon/app_icon.ico"
+  }
+}
