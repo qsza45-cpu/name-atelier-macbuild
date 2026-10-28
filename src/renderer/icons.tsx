@@ -34,6 +34,24 @@ export const IconClose = () => (
     <path d="M6 6l12 12M18 6L6 18" />
   </svg>
 );
+export const IconImage = () => (
+  <svg {...base}>
+    <rect x="4" y="5" width="16" height="14" rx="2.5" />
+    <circle cx="9.5" cy="10" r="1.6" />
+    <path d="M5 17l4.5-4.5 3 3 2.5-2.5L19 17" />
+  </svg>
+);
+export const IconLock = ({ open = false }: { open?: boolean }) => (
+  <svg {...base}>
+    <rect x="5.5" y="11" width="13" height="9" rx="2" />
+    <path d={open ? 'M8.5 11V8a3.5 3.5 0 0 1 6.8-1.2' : 'M8.5 11V8a3.5 3.5 0 0 1 7 0v3'} />
+  </svg>
+);
+export const IconFilter = () => (
+  <svg {...base}>
+    <path d="M4 6h16M7 12h10M10 18h4" />
+  </svg>
+);
 export const IconTrash = () => (
   <svg {...base}>
     <path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l1 12.2h9L17.5 7" />

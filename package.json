@@ -13,6 +13,7 @@
     "start": "npm run build && electron .",
     "check:data": "node scripts/check-data.mjs",
     "test": "node tests/engine.test.mjs",
+    "test:e2e": "node tests/e2e.mjs",
     "dist:win": "npm run build && electron-builder --win nsis zip --publish never",
     "dist:mac": "npm run build && electron-builder --mac zip dmg --publish never"
   },

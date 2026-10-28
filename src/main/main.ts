@@ -33,6 +33,12 @@ function cleanSettings(raw: any): Settings {
       gender: oneOf(last.gender, GENDER_IDS, DEFAULT_SETTINGS.last.gender),
     },
     regionStyle,
+    cond: {
+      len: oneOf(s.cond?.len, ['any', '1', '2', '3', '4+'] as const, 'any'),
+      first: typeof s.cond?.first === 'string' ? s.cond.first.trim().slice(0, 2) : '',
+      final: oneOf(s.cond?.final, ['any', 'yes', 'no'] as const, 'any'),
+    },
+    avoidText: typeof s.avoidText === 'string' ? s.avoidText.slice(0, 20000) : '',
   };
 }
 function cleanFavorites(raw: unknown): Favorite[] {
@@ -50,6 +56,10 @@ function cleanFavorites(raw: unknown): Favorite[] {
       style: oneOf(f.style, STYLE_IDS, 'fantasy'),
       gender: oneOf(f.gender, GENDER_IDS, 'any'),
       savedAt: str(f.savedAt, 40) || new Date().toISOString(),
+      ...(typeof f.meaning === 'string' && f.meaning ? { meaning: str(f.meaning, 300) } : {}),
+      ...(Array.isArray(f.nick) && f.nick.length ? { nick: f.nick.filter((x: unknown) => typeof x === 'string').slice(0, 5).map((x: string) => x.slice(0, 20)) } : {}),
+      ...(typeof f.memo === 'string' && f.memo ? { memo: str(f.memo, 2000) } : {}),
+      ...(typeof f.work === 'string' && f.work.trim() ? { work: str(f.work.trim(), 60) } : {}),
     }));
 }
 
@@ -152,7 +162,8 @@ function createWindow() {
   }
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.loadFile(join(__dirname, 'renderer', 'index.html'));
+  // Screenshot runs load the page with ?test=1 so the renderer exposes its share-image renderer for checks.
+  win.loadFile(join(__dirname, 'renderer', 'index.html'), shot ? { query: { test: '1' } } : undefined);
 }
 
 // One instance only: two windows would each hold their own copy of the store and overwrite each other's favourites.
@@ -200,6 +211,27 @@ app.whenReady().then(() => {
       writeFileSync(r.filePath, String(content ?? ''), 'utf8');
     } catch (err: any) {
       // Typically the file is still open in Excel (EBUSY/EPERM).
+      return { saved: false, error: String(err?.code ?? err?.message ?? err) };
+    }
+    return { saved: true, path: r.filePath };
+  });
+  // file:// images would taint the share-image canvas, so the renderer gets design/partner images as data URLs.
+  ipcMain.handle('asset:dataUrl', (_e, rel: string) => {
+    if (typeof rel !== 'string' || !/^(design|partner)\/[a-z0-9_]+\.(png|jpg)$/.test(rel)) return null;
+    const file = join(__dirname, 'renderer', rel);
+    if (!existsSync(file)) return null;
+    return `data:image/${rel.endsWith('.jpg') ? 'jpeg' : 'png'};base64,${readFileSync(file).toString('base64')}`;
+  });
+  ipcMain.handle('file:saveImage', async (e, dataUrl: string, defaultName: string) => {
+    const m = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) return { saved: false, error: 'invalid image' };
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const opts = { title: '이미지로 저장', defaultPath: join(app.getPath('pictures'), String(defaultName || 'NAME_ATELIER.png').replace(/[\\/:*?"<>|]/g, '_')), filters: [{ name: 'PNG 이미지', extensions: ['png'] }] };
+    const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+    if (r.canceled || !r.filePath) return { saved: false };
+    try {
+      writeFileSync(r.filePath, Buffer.from(m[1], 'base64'));
+    } catch (err: any) {
       return { saved: false, error: String(err?.code ?? err?.message ?? err) };
     }
     return { saved: true, path: r.filePath };

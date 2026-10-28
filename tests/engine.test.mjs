@@ -145,6 +145,65 @@ for (const [id, pools] of [['xianxia', E.XIANXIA], ['murim', E.MURIM]]) {
   check('invented names have no stutter', stutter === 0, `${stutter}`);
 }
 
+// 7. 성 고정: every name keeps the locked surname, given names still vary.
+for (const style of ['ko', 'rofan', 'de', 'jp', 'xianxia', 'murim', 'fantasy']) {
+  const rng = E.seeded(31);
+  const [first] = E.generate({ genre: 'fantasy', style, gender: 'any', count: 20, rng }).names.filter((n) => n.surname);
+  if (!first) {
+    fails.push(`${style} has no surname to lock`);
+    continue;
+  }
+  const r = E.generate({ genre: 'fantasy', style, gender: 'any', count: 12, fixedSurname: first.surname, rng });
+  check(`${style} fixed surname kept`, r.names.length === 12 && r.names.every((n) => n.surname?.ko === first.surname.ko && n.ko.includes(first.surname.ko)), r.names.map((n) => n.ko).join(','));
+  check(`${style} fixed surname varies given`, new Set(r.names.map((n) => n.given)).size >= 10);
+  const other = E.generate({ genre: 'fantasy', style: style === 'ko' ? 'jp' : 'ko', gender: 'any', count: 5, fixedSurname: first.surname, rng });
+  check(`${style} fixed surname ignored for other style`, other.names.every((n) => n.surname?.ko !== first.surname.ko || n.style === style));
+}
+
+// 8. 조건 뽑기: length, first syllable / initial consonant, final consonant.
+{
+  const finalOf = (ch) => (ch.charCodeAt(0) - 0xac00) % 28;
+  const cases = [
+    { style: 'ko', cond: { len: '2', first: '서', final: 'any' }, ok: (g) => g.length === 2 && g[0] === '서' },
+    { style: 'ko', cond: { len: 'any', first: 'ㅎ', final: 'no' }, ok: (g) => Math.floor((g.charCodeAt(0) - 0xac00) / 588) === 18 && finalOf(g.at(-1)) === 0 },
+    { style: 'gb', cond: { len: '4+', first: '', final: 'any' }, ok: (g) => g.length >= 4 },
+    { style: 'murim', cond: { len: '1', first: '', final: 'yes' }, ok: (g) => g.length === 1 && finalOf(g) !== 0 },
+    { style: 'xianxia', cond: { len: '2', first: 'ㅇ', final: 'any' }, ok: (g) => g.length === 2 && Math.floor((g.charCodeAt(0) - 0xac00) / 588) === 11 },
+    { style: 'fantasy', cond: { len: '3', first: '', final: 'yes' }, ok: (g) => g.length === 3 && finalOf(g.at(-1)) !== 0 },
+  ];
+  for (const c of cases) {
+    const r = E.generate({ genre: 'fantasy', style: c.style, gender: 'any', count: 10, cond: c.cond, rng: E.seeded(41) });
+    check(`cond ${c.style} ${JSON.stringify(c.cond)}`, r.names.length > 0 && r.names.every((n) => c.ok(n.given.replace(/\s/g, ''))), r.names.map((n) => n.given).join(','));
+  }
+  const none = E.generate({ genre: 'fantasy', style: 'murim', gender: 'any', count: 3, cond: { len: '3', first: '', final: 'any' }, rng: E.seeded(1) });
+  check('impossible cond returns nothing quickly', none.names.length === 0);
+}
+
+// 9. 피할 이름: same full name, same given name, endings.
+{
+  const avoid = E.parseNameList('유연서, 이서희\n레티시아 로젠베르크 (Laetitia Rosenberg)\n하윤');
+  check('parse list', JSON.stringify(avoid) === JSON.stringify(['유연서', '이서희', '레티시아로젠베르크', '하윤']), JSON.stringify(avoid));
+  check('clash same given', !!E.clashesWith({ ko: '김연서', given: '연서' }, avoid));
+  check('clash ends with avoided given', !!E.clashesWith({ ko: '박하윤', given: '하윤' }, avoid));
+  check('no clash unrelated', !E.clashesWith({ ko: '김도윤', given: '도윤' }, avoid));
+  const rng = E.seeded(51);
+  let hit = 0;
+  for (let i = 0; i < 40; i++) for (const n of E.generate({ genre: 'modern', style: 'ko', gender: 'f', count: 3, avoidNames: avoid, rng }).names) if (E.clashesWith(n, avoid)) hit++;
+  check('avoidNames respected', hit === 0, `${hit}`);
+}
+
+// 10. 한자 뜻·애칭 are attached.
+{
+  const [h] = E.generate({ genre: 'murim', style: 'murim', gender: 'any', count: 1, rng: E.seeded(61) }).names;
+  check('hanja meaning present', /^\S+ \S+/.test(h.meaning ?? '') && h.meaning.split(' · ').length >= [...h.orig].length, h.meaning);
+  const allHun = [...E.MURIM.given, ...E.MURIM.surnames, ...E.XIANXIA.given, ...E.XIANXIA.surnames].every((x) => typeof x.hun === 'string' && x.hun.length > 0);
+  check('every hanja has hun', allHun);
+  const rng = E.seeded(71);
+  let withNick = 0;
+  for (let i = 0; i < 60; i++) for (const n of E.generate({ genre: 'romance', style: 'gb', gender: 'f', count: 3, rng }).names) if (n.nick?.length) withNick++;
+  check('some western names carry nicknames', withNick > 10, `${withNick}`);
+}
+
 writeFileSync(join(root, 'tests', 'last-pool-sizes.json'), JSON.stringify(report, null, 2));
 console.log(`engine tests: ${pass} passed, ${fails.length} failed`);
 for (const f of fails.slice(0, 40)) console.log('  FAIL', f);

@@ -35,6 +35,8 @@ mkdirSync(join(dist, 'renderer/design'), { recursive: true });
 for (const f of existsSync(join(root, 'assets/design')) ? readdirSync(join(root, 'assets/design')) : []) {
   if (/\.(png|jpg|jpeg|svg|webp)$/i.test(f)) cpSync(join(root, 'assets/design', f), join(dist, 'renderer/design', f));
 }
+// PLOTIVE official logo (approved A Editorial Monogram), used only on shared card images.
+if (existsSync(join(root, 'assets/partner'))) cpSync(join(root, 'assets/partner'), join(dist, 'renderer/partner'), { recursive: true });
 if (existsSync(join(root, 'assets/icon/app_icon_256.png'))) {
   mkdirSync(join(dist, 'icon'), { recursive: true });
   cpSync(join(root, 'assets/icon/app_icon_256.png'), join(dist, 'icon/app_icon_256.png'));

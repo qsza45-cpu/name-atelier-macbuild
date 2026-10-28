@@ -54,7 +54,29 @@ export interface NameResult {
   genre: Genre;
   style: StyleId;
   gender: GenderSel; // the gender filter it was generated under
+  given: string; // Korean given-name part (what 조건 뽑기 and 피할 이름 look at)
+  surname?: SurnamePart; // absent for invented names drawn without a family name
+  meaning?: string; // 선협·무협: 「白 흰 백 · 蓮 연꽃 련 · 花 꽃 화」
+  nick?: string[]; // western nicknames (엘리자베스 → 리즈·베스)
 }
+
+/** The family-name part of a result, kept so 「성 고정」 can reuse it for the next draws. */
+export interface SurnamePart {
+  style: StyleId;
+  ko: string; // as displayed, particle included (폰 바우만)
+  orig: string;
+  roman?: string;
+  meaning?: string;
+}
+
+/** 조건 뽑기, applied to the Korean given name. */
+export interface NameConditions {
+  len: 'any' | '1' | '2' | '3' | '4+'; // syllables in the given name
+  first: string; // first syllable (연) or initial consonant (ㅇ); '' = any
+  final: 'any' | 'yes' | 'no'; // last syllable has a 받침
+}
+export const NO_CONDITIONS: NameConditions = { len: 'any', first: '', final: 'any' };
+export const hasConditions = (c?: NameConditions) => !!c && (c.len !== 'any' || !!c.first || c.final !== 'any');
 
 export interface GenerateRequest {
   genre: Genre;
@@ -63,6 +85,9 @@ export interface GenerateRequest {
   count: number;
   avoid?: Iterable<string>; // soft: ids not to repeat (session history); reused only when the pool runs dry
   exclude?: Iterable<string>; // hard: ids that must never be returned (names still on screen)
+  fixedSurname?: SurnamePart; // 성 고정 (used only when its style matches)
+  cond?: NameConditions;
+  avoidNames?: string[]; // 이미 쓴 이름: same or clashing names are skipped
   rng?: () => number;
 }
 export interface GenerateResponse {
@@ -71,6 +96,56 @@ export interface GenerateResponse {
 }
 
 const MAX_TRIES_PER_NAME = 400;
+const MAX_TRIES_FILTERED = 2500;
+
+// ------------------------------------------------------------------ Hangul helpers for 조건 뽑기
+const isSyllable = (ch: string) => {
+  const c = ch.charCodeAt(0);
+  return c >= 0xac00 && c <= 0xd7a3;
+};
+const finalOf = (ch: string) => (isSyllable(ch) ? (ch.charCodeAt(0) - 0xac00) % 28 : 0);
+const INITIALS = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const initialOf = (ch: string) => (isSyllable(ch) ? INITIALS[Math.floor((ch.charCodeAt(0) - 0xac00) / 588)] : '');
+
+/** Does a Korean given name satisfy the conditions? */
+export function meetsConditions(given: string, cond?: NameConditions): boolean {
+  if (!cond) return true;
+  const g = given.replace(/\s+/g, '');
+  if (!g) return false;
+  const n = [...g].length;
+  if (cond.len === '4+' ? n < 4 : cond.len !== 'any' && n !== Number(cond.len)) return false;
+  const first = cond.first.trim();
+  if (first) {
+    const f = first[0];
+    if (INITIALS.includes(f) ? initialOf(g[0]) !== f : !g.startsWith(first)) return false;
+  }
+  if (cond.final !== 'any' && (finalOf(g[g.length - 1]) !== 0) !== (cond.final === 'yes')) return false;
+  return true;
+}
+
+// ------------------------------------------------------------------ 이미 쓴 이름
+/** Normalises a pasted list (commas, newlines, 「·」, parentheses with original spellings) into compact Korean names. */
+export function parseNameList(text: string): string[] {
+  return [
+    ...new Set(
+      text
+        .split(/[\n,，、;·]+/)
+        .map((s) => s.replace(/\(.*?\)|\[.*?\]/g, '').replace(/\s+/g, ''))
+        .filter((s) => /[가-힣]/.test(s) && s.length <= 30),
+    ),
+  ];
+}
+/** Same full name, same given name, or one ending in the other (유연서 ↔ 김연서 ↔ 연서). */
+export function clashesWith(n: Pick<NameResult, 'ko' | 'given'>, avoid: string[]): string | null {
+  const full = compact(n.ko);
+  const given = compact(n.given);
+  for (const a of avoid) {
+    if (a === full || a === given) return a;
+    if (given.length >= 2 && a.length > given.length && a.endsWith(given)) return a;
+    if (a.length >= 2 && full.length > a.length && full.endsWith(a)) return a;
+  }
+  return null;
+}
 
 /** Small deterministic PRNG (mulberry32) for tests. */
 export function seeded(seed: number) {
@@ -119,30 +194,42 @@ const PARTICLE: Partial<Record<string, { ko: string; orig: string; chance: numbe
   fr: { ko: '드', orig: 'de', chance: 0.2 },
 };
 
-function realName(style: StyleData, req: GenerateRequest, rng: () => number): NameResult | undefined {
-  const given = pickWeighted<GivenName>(style.given, (n) => genderW(n.g, req.gender) * genreW(n.tags, req.genre), rng);
-  const sur = pickWeighted<Surname>(style.surnames, (s) => genreW(s.tags, req.genre), rng);
-  // Albrecht Albrecht, 하루 하루: a given name that equals the surname reads like a typo.
-  if (!given || !sur || given.ko === sur.ko) return undefined;
-  let surKo = sur.ko;
-  let surOrig = sur.orig;
-  const p = PARTICLE[style.id];
-  if (p && (req.genre === 'fantasy' || req.genre === 'romance') && rng() < p.chance) {
-    // French "de" elides before a vowel (d'Artois), so only use it before consonants.
-    const vowelStart = /^[AEIOUYÀÂÉÈÊÎÔÛaeiouy]/.test(sur.orig);
-    if (!(style.id === 'fr' && vowelStart)) {
-      surKo = `${p.ko} ${sur.ko}`;
-      surOrig = `${p.orig} ${sur.orig}`;
+function realName(style: StyleData, givenPool: GivenName[], req: GenerateRequest, rng: () => number): NameResult | undefined {
+  const given = pickWeighted<GivenName>(givenPool, (n) => genderW(n.g, req.gender) * genreW(n.tags, req.genre), rng);
+  if (!given) return undefined;
+  const styleId = style.id as StyleId;
+  let surPart: SurnamePart;
+  if (req.fixedSurname?.style === styleId) {
+    surPart = req.fixedSurname;
+  } else {
+    const sur = pickWeighted<Surname>(style.surnames, (s) => genreW(s.tags, req.genre), rng);
+    if (!sur) return undefined;
+    surPart = { style: styleId, ko: sur.ko, orig: sur.orig, roman: sur.roman };
+    const p = PARTICLE[style.id];
+    if (p && (req.genre === 'fantasy' || req.genre === 'romance') && rng() < p.chance) {
+      // French "de" elides before a vowel (d'Artois), so only use it before consonants.
+      const vowelStart = /^[AEIOUYÀÂÉÈÊÎÔÛaeiouy]/.test(sur.orig);
+      if (!(style.id === 'fr' && vowelStart)) surPart = { ...surPart, ko: `${p.ko} ${sur.ko}`, orig: `${p.orig} ${sur.orig}` };
     }
   }
+  // Albrecht Albrecht, 하루 하루: a given name that equals the surname reads like a typo.
+  if (given.ko === surPart.ko.replace(/^(폰|드) /, '')) return undefined;
   const surnameFirst = style.order === 'surname-first';
-  const ko = surnameFirst ? [surKo, given.ko].join(style.sep) : [given.ko, surKo].join(style.sep || ' ');
+  const ko = surnameFirst ? [surPart.ko, given.ko].join(style.sep) : [given.ko, surPart.ko].join(style.sep || ' ');
   const origSep = style.id === 'ko' ? '' : ' ';
-  const orig = surnameFirst ? `${surOrig}${origSep}${given.orig}` : `${given.orig} ${surOrig}`;
-  const roman = given.roman || sur.roman ? (surnameFirst ? `${sur.roman ?? ''} ${given.roman ?? ''}` : `${given.roman ?? ''} ${sur.roman ?? ''}`).trim() : undefined;
+  const orig = surnameFirst ? `${surPart.orig}${origSep}${given.orig}` : `${given.orig} ${surPart.orig}`;
+  const roman = given.roman || surPart.roman ? (surnameFirst ? `${surPart.roman ?? ''} ${given.roman ?? ''}` : `${given.roman ?? ''} ${surPart.roman ?? ''}`).trim() : undefined;
   // Korean given names often have no single standard hanja, so the card's second line shows the romanization instead.
   const second = style.id === 'ko' ? roman ?? '' : orig;
-  return { id: `${style.id}:${compact(ko)}`, ko, orig: second, roman, genre: req.genre, style: style.id as StyleId, gender: req.gender };
+  return { id: `${style.id}:${compact(ko)}`, ko, orig: second, roman, genre: req.genre, style: styleId, gender: req.gender, given: given.ko, surname: surPart, ...(given.nick?.length ? { nick: given.nick } : {}) };
+}
+
+/** 「白 흰 백」 for each character; compound surnames carry 「남녘 · 집」 (one 훈 per character). */
+function hanjaMeaning(hanja: string, reading: string, hun?: string): string[] {
+  const chars = [...hanja];
+  const reads = [...reading];
+  const huns = hun ? hun.split(' · ') : [];
+  return chars.map((c, i) => [c, huns[i], reads[i]].filter(Boolean).join(' '));
 }
 
 // 선협식·무협식: surname + one or two hanja syllables. The first given syllable uses its word-initial reading
@@ -151,9 +238,17 @@ function hanjaName(styleId: StyleId, pools: HanjaPools, req: GenerateRequest, rn
   const fits = (s: HanjaSyl) => req.gender === 'any' || s.g === req.gender || s.g === 'u';
   const pool = pools.given.filter(fits);
   if (!pool.length || !pools.surnames.length) return undefined;
-  const sur = pick(pools.surnames, rng);
-  const syls = [pick(pool, rng)];
-  if (rng() < 0.85) syls.push(pick(pool, rng));
+  const fixed = req.fixedSurname?.style === styleId ? req.fixedSurname : undefined;
+  const sur = fixed ? undefined : pick(pools.surnames, rng);
+  // 조건 뽑기: one or two syllables, and the first syllable can be chosen from those that already match.
+  const len = req.cond?.len ?? 'any';
+  if (len === '3' || len === '4+') return undefined;
+  const count = len === '1' ? 1 : len === '2' ? 2 : rng() < 0.85 ? 2 : 1;
+  const first = req.cond?.first.trim();
+  const firstPool = first ? pool.filter((s) => meetsConditions(s.initial ?? s.ko, { len: 'any', first, final: 'any' })) : pool;
+  if (!firstPool.length) return undefined;
+  const syls = [pick(firstPool, rng)];
+  if (count === 2) syls.push(pick(pool, rng));
   if (syls.length === 2 && syls[0].hanja === syls[1].hanja) return undefined;
   const readings: string[] = [];
   syls.forEach((s, i) => {
@@ -166,8 +261,10 @@ function hanjaName(styleId: StyleId, pools: HanjaPools, req: GenerateRequest, rn
     readings.push(r);
   });
   const given = readings.join('');
-  const ko = `${sur.initial ?? sur.ko}${given}`;
-  return { id: `${styleId}:${ko}`, ko, orig: `${sur.hanja}${syls.map((s) => s.hanja).join('')}`, genre: req.genre, style: styleId, gender: req.gender };
+  const surPart: SurnamePart = fixed ?? { style: styleId, ko: sur!.initial ?? sur!.ko, orig: sur!.hanja, meaning: hanjaMeaning(sur!.hanja, sur!.initial ?? sur!.ko, sur!.hun).join(' · ') };
+  const ko = `${surPart.ko}${given}`;
+  const meaning = [surPart.meaning, ...syls.map((s, i) => hanjaMeaning(s.hanja, readings[i], s.hun)[0])].filter(Boolean).join(' · ');
+  return { id: `${styleId}:${ko}`, ko, orig: `${surPart.orig}${syls.map((s) => s.hanja).join('')}`, genre: req.genre, style: styleId, gender: req.gender, given, surname: surPart, meaning };
 }
 
 // An ㅇ-initial syllable inside a name reads well only after an open syllable with a different vowel (리안, 레아).
@@ -190,10 +287,12 @@ function inventedName(req: GenerateRequest, rng: () => number): NameResult | und
   const given = parts.join('');
   for (let i = 1; i < given.length; i++) if (given[i] === given[i - 1] || vowelEcho(given[i - 1], given[i])) return undefined;
   if (given.length < 2 || given.length > 5) return undefined;
-  // A family name suits fantasy/romance characters; modern-genre invented names stay single.
+  // A family name suits fantasy/romance characters; modern-genre invented names stay single (unless 성 고정).
+  const fixed = req.fixedSurname?.style === 'fantasy' ? req.fixedSurname : undefined;
   const surnameChance = req.genre === 'modern' ? 0 : 0.6;
-  const ko = rng() < surnameChance ? `${given} ${pick(F.houseHead, rng)}${pick(F.houseTail, rng)}` : given;
-  return { id: `fantasy:${compact(ko)}`, ko, orig: '', genre: req.genre, style: 'fantasy', gender: req.gender };
+  const family = fixed?.ko ?? (rng() < surnameChance ? `${pick(F.houseHead, rng)}${pick(F.houseTail, rng)}` : '');
+  const ko = family ? `${given} ${family}` : given;
+  return { id: `fantasy:${compact(ko)}`, ko, orig: '', genre: req.genre, style: 'fantasy', gender: req.gender, given, ...(family ? { surname: { style: 'fantasy' as StyleId, ko: family, orig: '' } } : {}) };
 }
 
 export function generate(req: GenerateRequest): GenerateResponse {
@@ -202,16 +301,21 @@ export function generate(req: GenerateRequest): GenerateResponse {
   const exclude = new Set(req.exclude ?? []);
   const style = STYLES.find((s) => s.id === req.style);
   const hanja = HANJA_STYLES[req.style];
-  const make = () => (req.style === 'fantasy' ? inventedName(req, rng) : hanja ? hanjaName(req.style, hanja.pools, req, rng) : style ? realName(style, req, rng) : undefined);
+  const avoidNames = (req.avoidNames ?? []).map(compact).filter(Boolean);
+  // Real names: filter the given-name list up front so strict conditions don't depend on luck.
+  const givenPool = style ? style.given.filter((g) => meetsConditions(g.ko, req.cond)) : [];
+  const make = () => (req.style === 'fantasy' ? inventedName(req, rng) : hanja ? hanjaName(req.style, hanja.pools, req, rng) : style ? realName(style, givenPool, req, rng) : undefined);
+  const tries = hasConditions(req.cond) || avoidNames.length || req.fixedSurname ? MAX_TRIES_FILTERED : MAX_TRIES_PER_NAME;
   const names: NameResult[] = [];
   const taken = new Set<string>();
   let repeated = false;
   for (let i = 0; i < req.count; i++) {
     let fallback: NameResult | undefined;
     let chosen: NameResult | undefined;
-    for (let t = 0; t < MAX_TRIES_PER_NAME && !chosen; t++) {
+    for (let t = 0; t < tries && !chosen; t++) {
       const n = make();
       if (!n || isBlocked(n.ko) || taken.has(n.id) || exclude.has(n.id)) continue;
+      if (!meetsConditions(n.given, req.cond) || (avoidNames.length && clashesWith(n, avoidNames))) continue;
       if (avoid.has(n.id)) {
         fallback ??= n;
         continue;

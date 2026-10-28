@@ -36,6 +36,7 @@ NAME_ATELIER_DISPLAY=2 "release/win-unpacked/NAME ATELIER.exe"
 ```
 
 ## 테스트
-- `npm test` — 이름 엔진(조합·중복·성별·문화권 섞임·금칙어·내보내기)
+- `npm test` — 이름 엔진(조합·중복·성별·문화권 섞임·금칙어·내보내기·성 고정·조건·피할 이름·뜻·애칭)
+- `npm run test:e2e` — 실제 앱 화면 자동 조작(모니터 2에서만, 없으면 건너뜀)
 - `npm run check:data` — 데이터 검수(개수·중복·빈 칸·표기 문자·금칙어)
 - `npm run typecheck`
