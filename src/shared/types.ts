@@ -30,11 +30,16 @@ export interface StoreData {
 
 export const DEFAULT_SETTINGS: Settings = { theme: 'system', animation: true, last: { genre: 'fantasy', style: 'rofan', gender: 'any' }, regionStyle: {} };
 
+export interface SaveResult {
+  ok: boolean;
+  error?: string;
+}
+
 export interface AtelierApi {
   load(): Promise<StoreData>;
-  saveFavorites(list: Favorite[]): Promise<void>;
-  saveSettings(s: Settings): Promise<void>;
+  saveFavorites(list: Favorite[]): Promise<SaveResult>;
+  saveSettings(s: Settings): Promise<SaveResult>;
   copy(text: string): Promise<void>;
-  exportFile(kind: 'txt' | 'csv', content: string, defaultName: string): Promise<{ saved: boolean; path?: string }>;
+  exportFile(kind: 'txt' | 'csv', content: string, defaultName: string): Promise<{ saved: boolean; path?: string; error?: string }>;
   info(): Promise<{ version: string; dataPath: string; platform: string }>;
 }

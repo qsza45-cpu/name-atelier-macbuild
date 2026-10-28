@@ -61,7 +61,8 @@ export interface GenerateRequest {
   style: StyleId;
   gender: GenderSel;
   count: number;
-  avoid?: Iterable<string>; // ids not to repeat (session history + names already on screen)
+  avoid?: Iterable<string>; // soft: ids not to repeat (session history); reused only when the pool runs dry
+  exclude?: Iterable<string>; // hard: ids that must never be returned (names still on screen)
   rng?: () => number;
 }
 export interface GenerateResponse {
@@ -104,7 +105,8 @@ const pick = <T>(xs: T[], rng: () => number) => xs[Math.floor(rng() * xs.length)
 
 // Genre affinity boosts a name; it never excludes one.
 const GENRE_BOOST = 4;
-const genreW = (tags: Genre[] | undefined, genre: Genre) => (tags?.includes(genre) ? GENRE_BOOST : 1);
+// Names tagged only 무협 (모용·서문·백운…) appear only in the 무협 genre, so a 현대물 한국식 name never gets them.
+const genreW = (tags: Genre[] | undefined, genre: Genre) => (tags?.includes(genre) ? GENRE_BOOST : tags?.length === 1 && tags[0] === 'murim' ? 0 : 1);
 function genderW(g: G, sel: GenderSel) {
   if (sel === 'any') return g === 'u' ? 2 : 1;
   if (g === sel) return 1;
@@ -120,7 +122,8 @@ const PARTICLE: Partial<Record<string, { ko: string; orig: string; chance: numbe
 function realName(style: StyleData, req: GenerateRequest, rng: () => number): NameResult | undefined {
   const given = pickWeighted<GivenName>(style.given, (n) => genderW(n.g, req.gender) * genreW(n.tags, req.genre), rng);
   const sur = pickWeighted<Surname>(style.surnames, (s) => genreW(s.tags, req.genre), rng);
-  if (!given || !sur) return undefined;
+  // Albrecht Albrecht, 하루 하루: a given name that equals the surname reads like a typo.
+  if (!given || !sur || given.ko === sur.ko) return undefined;
   let surKo = sur.ko;
   let surOrig = sur.orig;
   const p = PARTICLE[style.id];
@@ -167,6 +170,16 @@ function hanjaName(styleId: StyleId, pools: HanjaPools, req: GenerateRequest, rn
   return { id: `${styleId}:${ko}`, ko, orig: `${sur.hanja}${syls.map((s) => s.hanja).join('')}`, genre: req.genre, style: styleId, gender: req.gender };
 }
 
+// An ㅇ-initial syllable inside a name reads well only after an open syllable with a different vowel (리안, 레아).
+// After a final consonant (셀엘, 온엔) or the same vowel (레에나, 노온, 시일) it reads as a stutter.
+function vowelEcho(prev: string, next: string) {
+  const p = prev.charCodeAt(0) - 0xac00;
+  const n = next.charCodeAt(0) - 0xac00;
+  if (p < 0 || n < 0 || p > 11171 || n > 11171) return false;
+  if (Math.floor(n / 588) !== 11) return false;
+  return p % 28 !== 0 || Math.floor(p / 28) % 21 === Math.floor(n / 28) % 21;
+}
+
 // 창작 판타지식: rule-based syllable names. Rejects doubled syllables (리리) and over-long results.
 function inventedName(req: GenerateRequest, rng: () => number): NameResult | undefined {
   const F = FANTASY;
@@ -175,7 +188,7 @@ function inventedName(req: GenerateRequest, rng: () => number): NameResult | und
   if (rng() < 0.45) parts.push(pick(F.mid, rng));
   parts.push(pick(tails, rng));
   const given = parts.join('');
-  for (let i = 1; i < given.length; i++) if (given[i] === given[i - 1]) return undefined;
+  for (let i = 1; i < given.length; i++) if (given[i] === given[i - 1] || vowelEcho(given[i - 1], given[i])) return undefined;
   if (given.length < 2 || given.length > 5) return undefined;
   // A family name suits fantasy/romance characters; modern-genre invented names stay single.
   const surnameChance = req.genre === 'modern' ? 0 : 0.6;
@@ -186,6 +199,7 @@ function inventedName(req: GenerateRequest, rng: () => number): NameResult | und
 export function generate(req: GenerateRequest): GenerateResponse {
   const rng = req.rng ?? Math.random;
   const avoid = new Set(req.avoid ?? []);
+  const exclude = new Set(req.exclude ?? []);
   const style = STYLES.find((s) => s.id === req.style);
   const hanja = HANJA_STYLES[req.style];
   const make = () => (req.style === 'fantasy' ? inventedName(req, rng) : hanja ? hanjaName(req.style, hanja.pools, req, rng) : style ? realName(style, req, rng) : undefined);
@@ -197,7 +211,7 @@ export function generate(req: GenerateRequest): GenerateResponse {
     let chosen: NameResult | undefined;
     for (let t = 0; t < MAX_TRIES_PER_NAME && !chosen; t++) {
       const n = make();
-      if (!n || isBlocked(n.ko) || taken.has(n.id)) continue;
+      if (!n || isBlocked(n.ko) || taken.has(n.id) || exclude.has(n.id)) continue;
       if (avoid.has(n.id)) {
         fallback ??= n;
         continue;

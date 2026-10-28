@@ -67,7 +67,7 @@ export const STYLE: StyleData = {
     { ko: '소', orig: '蘇', roman: 'So' },
     { ko: '석', orig: '石', roman: 'Seok' },
     { ko: '선', orig: '宣', roman: 'Sun' },
-    { ko: '설', orig: '薛', roman: 'Seol', tags: ['murim'] },
+    { ko: '설', orig: '薛', roman: 'Seol', tags: ['murim', 'romance', 'modern'] },
     { ko: '마', orig: '馬', roman: 'Ma' },
     { ko: '길', orig: '吉', roman: 'Gil' },
     { ko: '연', orig: '延', roman: 'Yeon' },

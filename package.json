@@ -42,7 +42,8 @@
     "npmRebuild": false,
     "electronLanguages": [
       "ko",
-      "en-US"
+      "en-US",
+      "en"
     ],
     "compression": "maximum",
     "win": {
@@ -62,10 +63,22 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        "zip",
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
-      "identity": null,
+      "identity": "-",
       "hardenedRuntime": false,
       "icon": "assets/icon/app_icon_1024.png"
     },

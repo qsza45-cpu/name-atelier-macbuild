@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Genre } from '../data/types';
 import { GENDERS, GENRES, REGIONS, STYLE_OPTIONS, generate, label, regionOf, type GenderSel, type NameResult, type Region, type StyleId } from '../engine/generate';
-import { toClipboardText, toCsv, toTxt } from '../engine/exporting';
-import { DEFAULT_SETTINGS, type AtelierApi, type Favorite, type Settings, type ThemePref } from '../shared/types';
+import { copyLabel, toClipboardText, toCsv, toTxt } from '../engine/exporting';
+import { DEFAULT_SETTINGS, type AtelierApi, type Favorite, type SaveResult, type Settings, type ThemePref } from '../shared/types';
 import { hasAsset, onAssets } from './assets';
 import { IconClose, IconCopy, IconExport, IconGear, IconInfo, IconStar, IconTrash } from './icons';
 
@@ -22,6 +22,8 @@ const sizeClass = (ko: string) => {
   return n >= 15 ? 'long' : n >= 9 ? 'mid' : '';
 };
 const today = () => new Date().toISOString().slice(0, 10);
+// Keep 폰/드 on the same line as the surname when a long name wraps (고트프리트 / 폰 바우만).
+const keepParticle = (ko: string) => ko.replace(/(^| )(폰|드) /g, (_m, lead: string, p: string) => `${lead}${p} `);
 
 function useAssetTick() {
   const [, set] = useState(0);
@@ -104,23 +106,28 @@ export function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), 1600);
   };
 
+  const saveFailed = (r: SaveResult) => !r.ok && flash(`저장하지 못했습니다 (${r.error ?? '알 수 없는 오류'}). 잠시 뒤 다시 시도해 주세요`);
   const updateSettings = (patch: Partial<Settings>) => {
-    setSettings((s) => {
-      const next = { ...s, ...patch, last: { ...s.last, ...(patch.last ?? {}) } };
-      api().saveSettings(next);
-      return next;
-    });
+    const next = { ...settings, ...patch, last: { ...settings.last, ...(patch.last ?? {}) } };
+    setSettings(next);
+    api().saveSettings(next).then(saveFailed, () => saveFailed({ ok: false }));
   };
-  const setLast = (patch: Partial<Settings['last']>) => updateSettings({ last: { ...settings.last, ...patch } });
+  const setLast = (patch: Partial<Settings['last']>) => {
+    setNote(null); // a "pool running dry" notice belongs to the old filter
+    updateSettings({ last: { ...settings.last, ...patch } });
+  };
   const region = regionOf(style);
   const regionStyles = STYLE_OPTIONS.filter((o) => REGIONS.find((r) => r.id === region)!.styles.includes(o.id));
-  const pickStyle = (s: StyleId) => updateSettings({ last: { ...settings.last, style: s }, regionStyle: { ...settings.regionStyle, [regionOf(s)]: s } });
+  const pickStyle = (s: StyleId) => {
+    setNote(null);
+    updateSettings({ last: { ...settings.last, style: s }, regionStyle: { ...settings.regionStyle, [regionOf(s)]: s } });
+  };
   // Switching group returns to the style last used in that group (or its first style).
   const pickRegion = (r: Region) => r !== region && pickStyle(settings.regionStyle[r] ?? REGIONS.find((x) => x.id === r)!.styles[0]);
 
   const persistFavorites = (next: Favorite[]) => {
     setFavorites(next);
-    api().saveFavorites(next);
+    api().saveFavorites(next).then(saveFailed, () => saveFailed({ ok: false }));
   };
   const toggleFavorite = (n: NameResult) => {
     if (favIds.has(n.id)) {
@@ -142,8 +149,8 @@ export function App() {
     // Favourited cards stay put; if all three are kept, draw a fresh three (they remain in 즐겨찾기).
     const kept = slots.map((s) => (s && favIds.has(s.id) ? s : null));
     const targets = kept.every(Boolean) ? [0, 1, 2] : [0, 1, 2].filter((i) => !kept[i]);
-    const avoid = [...history.current, ...slots.filter((s): s is NameResult => !!s).map((s) => s.id)];
-    const res = generate({ genre, style, gender, count: targets.length, avoid });
+    const onScreen = slots.filter((s): s is NameResult => !!s).map((s) => s.id);
+    const res = generate({ genre, style, gender, count: targets.length, avoid: history.current, exclude: onScreen });
     res.names.forEach((n) => history.current.add(n.id));
     if (res.names.length === 0) {
       setNote({ text: '이 조합으로 만들 수 있는 이름이 없습니다. 다른 선택을 해 보세요.', warn: true });
@@ -189,9 +196,10 @@ export function App() {
       if (panel || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target as HTMLElement;
       const onControl = t && (t.tagName === 'BUTTON' || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
-      if (e.key === 'r' || e.key === 'R' || e.key === 'ㄱ' || (e.key === ' ' && !onControl)) {
+      // e.code works whatever the keyboard layout (ㄱ in 한글 mode); holding the key must not burn through names.
+      if (e.code === 'KeyR' || (e.key === ' ' && !onControl)) {
         e.preventDefault();
-        draw();
+        if (!e.repeat) draw();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -203,6 +211,7 @@ export function App() {
     const content = kind === 'csv' ? toCsv(favorites) : toTxt(favorites, '즐겨찾기한 이름');
     const r = await api().exportFile(kind, content, `NAME_ATELIER_즐겨찾기_${today()}.${kind}`);
     if (r.saved) flash(`${kind.toUpperCase()}로 저장했습니다`);
+    else if (r.error) flash(`저장하지 못했습니다 (${r.error}). 파일이 다른 프로그램에서 열려 있는지 확인해 주세요`);
   };
   const current = slots.filter((s): s is NameResult => !!s);
 
@@ -246,7 +255,11 @@ export function App() {
         <Chips label="성별" options={GENDERS} value={gender} onChange={(v: GenderSel) => setLast({ gender: v })} />
       </section>
 
-      <main className="stage" aria-live="polite">
+      <div className="sr-only" aria-live="polite">
+        {current.map((n) => n.ko).join(', ')}
+      </div>
+      {/* While cards flip, a click would hit the outgoing name, so the stage ignores the pointer. */}
+      <main className={`stage${busy ? ' busy' : ''}`}>
         {slots.map((n, i) => (
           <div className="slot" key={i}>
             <div className="card3d" style={{ transform: `rotateY(${rot[i]}deg)` }}>
@@ -265,7 +278,7 @@ export function App() {
                     </div>
                     <div className="card-body">
                       <div className={`name ${sizeClass(n.ko)}`} title={n.ko}>
-                        {n.ko}
+                        {keepParticle(n.ko)}
                       </div>
                       {n.orig && <div className="orig">{n.orig}</div>}
                       <div className="divider" aria-hidden>
@@ -278,7 +291,7 @@ export function App() {
                       </div>
                     </div>
                     <div className="card-actions">
-                      <button className="icon-btn" title="이름 복사" aria-label={`${n.ko} 복사`} onClick={() => copy(n.orig && n.style !== 'ko' ? `${n.ko} (${n.orig})` : n.ko)}>
+                      <button className="icon-btn" title="이름 복사" aria-label={`${n.ko} 복사`} onClick={() => copy(copyLabel(n))}>
                         <IconCopy />
                       </button>
                       <button className={`icon-btn${favIds.has(n.id) ? ' on' : ''}`} title={favIds.has(n.id) ? '즐겨찾기 해제' : '즐겨찾기'} aria-pressed={favIds.has(n.id)} aria-label={`${n.ko} 즐겨찾기`} onClick={() => toggleFavorite(n)}>
@@ -300,7 +313,8 @@ export function App() {
       </main>
 
       <div className="draw-row">
-        <button className="draw" onClick={draw} disabled={busy} aria-keyshortcuts="R">
+        {/* aria-disabled, not disabled: a disabled button drops keyboard focus to <body> mid-animation. */}
+        <button className="draw" onClick={draw} aria-disabled={busy} aria-keyshortcuts="R">
           {drawn ? '다시 뽑기 ✨' : '이름 뽑기 ✨'}
         </button>
         <div className={`draw-note${note?.warn ? ' warn' : ''}`}>{note?.text ?? (drawn ? '★ 즐겨찾기한 카드는 다시 뽑아도 남아요 · 단축키 R' : `한 번에 ${SLOTS}개씩 뽑습니다 · 단축키 R`)}</div>
@@ -344,10 +358,10 @@ export function App() {
       {panel === 'favorites' && (
         <>
           <div className="scrim" onClick={() => setPanel(null)} />
-          <aside className="drawer" role="dialog" aria-label="즐겨찾기">
+          <aside className="drawer" role="dialog" aria-modal="true" aria-label="즐겨찾기">
             <div className="drawer-head">
               <h2>즐겨찾기 {favorites.length}</h2>
-              <button className="icon-btn" aria-label="닫기" onClick={() => setPanel(null)}>
+              <button className="icon-btn" aria-label="닫기" autoFocus onClick={() => setPanel(null)}>
                 <IconClose />
               </button>
             </div>
@@ -379,7 +393,7 @@ export function App() {
                         {label.genre(f.genre)} · {label.style(f.style)} · {label.gender(f.gender)} · {f.savedAt.slice(0, 10)}
                       </div>
                     </div>
-                    <button className="icon-btn" title="복사" aria-label={`${f.ko} 복사`} onClick={() => copy(f.orig && f.style !== 'ko' ? `${f.ko} (${f.orig})` : f.ko)}>
+                    <button className="icon-btn" title="복사" aria-label={`${f.ko} 복사`} onClick={() => copy(copyLabel(f))}>
                       <IconCopy />
                     </button>
                     <button className="icon-btn" title="삭제" aria-label={`${f.ko} 삭제`} onClick={() => persistFavorites(favorites.filter((x) => x.id !== f.id))}>
@@ -396,7 +410,7 @@ export function App() {
       {panel === 'settings' && (
         <>
           <div className="scrim" onClick={() => setPanel(null)} />
-          <div className="dialog" role="dialog" aria-label="설정">
+          <div className="dialog" role="dialog" aria-modal="true" aria-label="설정">
             <h2>설정</h2>
             <div className="row">
               <span>화면 테마</span>
@@ -456,7 +470,7 @@ export function App() {
       {panel === 'about' && (
         <>
           <div className="scrim" onClick={() => setPanel(null)} />
-          <div className="dialog" role="dialog" aria-label="프로그램 정보">
+          <div className="dialog" role="dialog" aria-modal="true" aria-label="프로그램 정보">
             <div className="about-logo">
               {symbol}
               {wordmark}

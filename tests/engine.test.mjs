@@ -100,6 +100,10 @@ for (const [id, pools] of [['xianxia', E.XIANXIA], ['murim', E.MURIM]]) {
   const t = Date.now();
   const r = E.generate({ genre: 'modern', style: S.id, gender: 'any', count: 3, avoid: all, rng: E.seeded(3) });
   check('exhausted pool flags repeated', r.repeated === true);
+  // Hard exclusion (names on screen) is never used even as the exhausted-pool fallback.
+  const onScreen = r.names.map((n) => n.id);
+  const r2 = E.generate({ genre: 'modern', style: S.id, gender: 'any', count: 3, avoid: all, exclude: onScreen, rng: E.seeded(4) });
+  check('exclude never returned', r2.names.every((n) => !onScreen.includes(n.id)));
   check('exhausted pool returns fast', Date.now() - t < 500, `${Date.now() - t}ms`);
 }
 
@@ -116,6 +120,29 @@ for (const [id, pools] of [['xianxia', E.XIANXIA], ['murim', E.MURIM]]) {
   const txt = E.toTxt(rows, '테스트');
   check('txt content', txt.includes('샬럿 펨버턴 (Charlotte Pemberton)') && txt.includes('로맨스 · 영국식 · 여성 · 저장 2026-10-28'));
   check('clipboard text', E.toClipboardText(rows).split('\n').length === 2);
+  check('korean copy has no romanization', E.copyLabel({ ko: '김서준', orig: 'Kim Seo-jun', style: 'ko' }) === '김서준');
+  check('hanja copy shows hanja', E.copyLabel({ ko: '백연화', orig: '白蓮花', style: 'murim' }) === '백연화 (白蓮花)');
+}
+
+// 6. Name sanity: given ≠ surname, no stutter syllables in invented names.
+{
+  for (const S of E.STYLES) {
+    const rng = E.seeded(21);
+    let same = 0;
+    for (let i = 0; i < 400; i++) {
+      const [n] = E.generate({ genre: 'romance', style: S.id, gender: 'any', count: 1, rng }).names;
+      const p = n.ko.split(' ');
+      if (p.length >= 2 && p[0] === p[p.length - 1]) same++;
+    }
+    check(`${S.id} given ≠ surname`, same === 0, `${same}`);
+  }
+  const rng = E.seeded(9);
+  let stutter = 0;
+  for (let i = 0; i < 2000; i++) {
+    const [n] = E.generate({ genre: 'fantasy', style: 'fantasy', gender: 'any', count: 1, rng }).names;
+    if (/(.)\1/.test(n.ko.split(' ')[0]) || /레에|노온|시일|에엘/.test(n.ko)) stutter++;
+  }
+  check('invented names have no stutter', stutter === 0, `${stutter}`);
 }
 
 writeFileSync(join(root, 'tests', 'last-pool-sizes.json'), JSON.stringify(report, null, 2));

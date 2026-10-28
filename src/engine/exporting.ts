@@ -15,15 +15,18 @@ export interface ExportRow {
 const meta = (r: ExportRow) => `${label.genre(r.genre)} · ${label.style(r.style)} · ${label.gender(r.gender)}`;
 const day = (iso?: string) => (iso ? iso.slice(0, 10) : '');
 
-/** One line per name: "샬럿 펨버턴 (Charlotte Pemberton)". */
+/** "샬럿 펨버턴 (Charlotte Pemberton)", "백연화 (白蓮花)"; Korean names stay Hangul only (romanization is in CSV). */
+export const copyLabel = (r: Pick<ExportRow, 'ko' | 'orig' | 'style'>) => (r.orig && r.style !== 'ko' ? `${r.ko} (${r.orig})` : r.ko);
+
+/** One line per name, same text as the per-card copy button. */
 export function toClipboardText(rows: ExportRow[]) {
-  return rows.map((r) => (r.orig ? `${r.ko} (${r.orig})` : r.ko)).join('\n');
+  return rows.map(copyLabel).join('\n');
 }
 
 export function toTxt(rows: ExportRow[], title: string) {
   const lines = [`NAME ATELIER — ${title}`, `만든 날: ${new Date().toISOString().slice(0, 10)}  ·  ${rows.length}개`, ''];
   for (const r of rows) {
-    lines.push(r.orig ? `${r.ko} (${r.orig})` : r.ko);
+    lines.push(copyLabel(r));
     lines.push(`    ${meta(r)}${r.savedAt ? ` · 저장 ${day(r.savedAt)}` : ''}`);
   }
   return lines.join('\r\n') + '\r\n';

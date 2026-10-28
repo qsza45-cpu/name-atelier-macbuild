@@ -1,35 +1,100 @@
 // NAME ATELIER main process: one window, a JSON store in userData, clipboard and file export. No network.
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell } from 'electron';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session } from 'electron';
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_SETTINGS, type Favorite, type Settings, type StoreData } from '../shared/types';
+import { GENDERS, GENRES, REGIONS, STYLE_OPTIONS } from '../engine/generate';
 
 // Tests point the store elsewhere so they never touch the real favourites.
 if (process.env.NAME_ATELIER_HOME) app.setPath('userData', process.env.NAME_ATELIER_HOME);
 
 const storePath = () => join(app.getPath('userData'), 'name-atelier-data.json');
+const MAX_FAVORITES = 5000;
+
+// Everything that reaches the store goes through these, so a bad file or payload can't break drawing.
+const oneOf = <T extends string>(v: unknown, ok: readonly T[], dflt: T): T => (ok.includes(v as T) ? (v as T) : dflt);
+const STYLE_IDS = STYLE_OPTIONS.map((s) => s.id);
+const GENRE_IDS = GENRES.map((g) => g.id);
+const GENDER_IDS = GENDERS.map((g) => g.id);
+function cleanSettings(raw: any): Settings {
+  const s = raw && typeof raw === 'object' ? raw : {};
+  const last = s.last && typeof s.last === 'object' ? s.last : {};
+  const regionStyle: Settings['regionStyle'] = {};
+  for (const r of REGIONS) {
+    const v = s.regionStyle?.[r.id];
+    if (r.styles.includes(v)) regionStyle[r.id] = v;
+  }
+  return {
+    theme: oneOf(s.theme, ['system', 'light', 'dark'] as const, DEFAULT_SETTINGS.theme),
+    animation: typeof s.animation === 'boolean' ? s.animation : DEFAULT_SETTINGS.animation,
+    last: {
+      genre: oneOf(last.genre, GENRE_IDS, DEFAULT_SETTINGS.last.genre),
+      style: oneOf(last.style, STYLE_IDS, DEFAULT_SETTINGS.last.style),
+      gender: oneOf(last.gender, GENDER_IDS, DEFAULT_SETTINGS.last.gender),
+    },
+    regionStyle,
+  };
+}
+function cleanFavorites(raw: unknown): Favorite[] {
+  if (!Array.isArray(raw)) return [];
+  const str = (v: unknown, max = 200) => (typeof v === 'string' ? v.slice(0, max) : '');
+  return raw
+    .filter((f) => f && typeof f.ko === 'string' && f.ko && typeof f.id === 'string' && f.id)
+    .slice(0, MAX_FAVORITES)
+    .map((f) => ({
+      id: str(f.id),
+      ko: str(f.ko),
+      orig: str(f.orig),
+      ...(typeof f.roman === 'string' ? { roman: str(f.roman) } : {}),
+      genre: oneOf(f.genre, GENRE_IDS, 'fantasy'),
+      style: oneOf(f.style, STYLE_IDS, 'fantasy'),
+      gender: oneOf(f.gender, GENDER_IDS, 'any'),
+      savedAt: str(f.savedAt, 40) || new Date().toISOString(),
+    }));
+}
 
 function readStore(): StoreData {
+  const file = storePath();
+  if (!existsSync(file)) return { version: 1, favorites: [], settings: DEFAULT_SETTINGS };
   try {
-    const raw = JSON.parse(readFileSync(storePath(), 'utf8'));
-    return {
-      version: 1,
-      favorites: Array.isArray(raw.favorites) ? raw.favorites.filter((f: Favorite) => f && typeof f.ko === 'string' && typeof f.id === 'string') : [],
-      settings: { ...DEFAULT_SETTINGS, ...(raw.settings ?? {}), last: { ...DEFAULT_SETTINGS.last, ...(raw.settings?.last ?? {}) }, regionStyle: { ...(raw.settings?.regionStyle ?? {}) } },
-    };
+    // Notepad may add a BOM when the user edits the file by hand.
+    const raw = JSON.parse(readFileSync(file, 'utf8').replace(/^﻿/, ''));
+    return { version: 1, favorites: cleanFavorites(raw.favorites), settings: cleanSettings(raw.settings) };
   } catch {
+    // Unreadable store: keep it aside instead of letting the next save overwrite the user's favourites.
+    try {
+      renameSync(file, `${file}.corrupt-${Date.now()}`);
+    } catch {}
     return { version: 1, favorites: [], settings: DEFAULT_SETTINGS };
   }
 }
 
 let store: StoreData;
 
-// Write to a temp file then rename, so a crash mid-write never leaves a half-written store.
-function writeStore() {
-  mkdirSync(app.getPath('userData'), { recursive: true });
+// Write to a temp file, fsync, then rename, so a crash or power cut never leaves a half-written store.
+// Antivirus can briefly lock the file on Windows, so retry a few times before giving up.
+function writeStore(): { ok: boolean; error?: string } {
   const tmp = `${storePath()}.tmp`;
-  writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf8');
-  renameSync(tmp, storePath());
+  let error = '';
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      mkdirSync(app.getPath('userData'), { recursive: true });
+      const fd = openSync(tmp, 'w');
+      try {
+        writeSync(fd, JSON.stringify(store, null, 2), null, 'utf8');
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+      renameSync(tmp, storePath());
+      return { ok: true };
+    } catch (e: any) {
+      error = String(e?.code ?? e?.message ?? e);
+      const until = Date.now() + 60 * (attempt + 1);
+      while (Date.now() < until);
+    }
+  }
+  return { ok: false, error };
 }
 
 function createWindow() {
@@ -51,8 +116,13 @@ function createWindow() {
   const shot = !app.isPackaged && process.env.NAME_ATELIER_SHOT;
   if (shot) {
     win.webContents.once('did-finish-load', async () => {
+      const size = process.env.NAME_ATELIER_SHOT_SIZE?.match(/^(\d+)x(\d+)$/);
+      if (size) win.setContentSize(Number(size[1]), Number(size[2]));
       await new Promise((r) => setTimeout(r, 800));
-      if (process.env.NAME_ATELIER_SHOT_JS) await win.webContents.executeJavaScript(process.env.NAME_ATELIER_SHOT_JS);
+      if (process.env.NAME_ATELIER_SHOT_JS) {
+        const result = await win.webContents.executeJavaScript(process.env.NAME_ATELIER_SHOT_JS);
+        if (result !== undefined) writeFileSync(`${shot}.json`, JSON.stringify(result, null, 2));
+      }
       await new Promise((r) => setTimeout(r, 1200));
       writeFileSync(shot, (await win.webContents.capturePage()).toPNG());
       app.quit();
@@ -63,10 +133,23 @@ function createWindow() {
   win.loadFile(join(__dirname, 'renderer', 'index.html'));
 }
 
+// One instance only: two windows would each hold their own copy of the store and overwrite each other's favourites.
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
+app.on('second-instance', () => {
+  const w = BrowserWindow.getAllWindows()[0];
+  if (w) {
+    if (w.isMinimized()) w.restore();
+    w.focus();
+  }
+});
+
 app.whenReady().then(() => {
+  if (!primary) return;
   store = readStore();
-  // Block every network request: the app is offline by design.
+  // Block every network request and permission prompt: the app is offline by design and needs no device access.
   session.defaultSession.webRequest.onBeforeRequest((d, cb) => cb({ cancel: !/^(file|devtools|data|blob):/.test(d.url) }));
+  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
 
   // Keep the standard Edit menu on macOS (copy/paste shortcuts need it); no menu bar on Windows.
   if (process.platform === 'darwin') {
@@ -76,26 +159,30 @@ app.whenReady().then(() => {
   }
 
   ipcMain.handle('store:load', () => store);
-  ipcMain.handle('store:favorites', (_e, list: Favorite[]) => {
-    store.favorites = Array.isArray(list) ? list.slice(0, 5000) : [];
-    writeStore();
+  ipcMain.handle('store:favorites', (_e, list: unknown) => {
+    store.favorites = cleanFavorites(list);
+    return writeStore();
   });
-  ipcMain.handle('store:settings', (_e, s: Settings) => {
-    store.settings = { ...DEFAULT_SETTINGS, ...s };
-    writeStore();
+  ipcMain.handle('store:settings', (_e, s: unknown) => {
+    store.settings = cleanSettings(s);
+    return writeStore();
   });
-  ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(String(text ?? '')));
+  ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(String(text ?? '').slice(0, 1_000_000)));
   ipcMain.handle('file:export', async (e, kind: 'txt' | 'csv', content: string, defaultName: string) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     const filters = kind === 'csv' ? [{ name: 'CSV (UTF-8)', extensions: ['csv'] }] : [{ name: '텍스트 (UTF-8)', extensions: ['txt'] }];
     const opts = { title: kind === 'csv' ? 'CSV로 저장' : 'TXT로 저장', defaultPath: join(app.getPath('documents'), defaultName), filters };
     const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
     if (r.canceled || !r.filePath) return { saved: false };
-    writeFileSync(r.filePath, content, 'utf8');
+    try {
+      writeFileSync(r.filePath, String(content ?? ''), 'utf8');
+    } catch (err: any) {
+      // Typically the file is still open in Excel (EBUSY/EPERM).
+      return { saved: false, error: String(err?.code ?? err?.message ?? err) };
+    }
     return { saved: true, path: r.filePath };
   });
   ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataPath: storePath(), platform: process.platform }));
-  ipcMain.handle('app:reveal', () => shell.showItemInFolder(storePath()));
 
   createWindow();
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());

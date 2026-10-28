@@ -32,12 +32,12 @@ cpSync(join(root, 'src/renderer/styles'), join(dist, 'renderer/styles'), { recur
 cpSync(join(root, 'assets/fonts'), join(dist, 'renderer/fonts'), { recursive: true });
 // Design assets from 이미지개미 (assets/design). Missing files are fine: the CSS falls back to code-drawn styles.
 mkdirSync(join(dist, 'renderer/design'), { recursive: true });
-for (const f of readdirSync(join(root, 'assets/design'))) {
+for (const f of existsSync(join(root, 'assets/design')) ? readdirSync(join(root, 'assets/design')) : []) {
   if (/\.(png|jpg|jpeg|svg|webp)$/i.test(f)) cpSync(join(root, 'assets/design', f), join(dist, 'renderer/design', f));
 }
 if (existsSync(join(root, 'assets/icon/app_icon_256.png'))) {
   mkdirSync(join(dist, 'icon'), { recursive: true });
   cpSync(join(root, 'assets/icon/app_icon_256.png'), join(dist, 'icon/app_icon_256.png'));
 }
-cpSync(join(root, 'assets/licenses'), join(dist, 'renderer/licenses'), { recursive: true });
+if (existsSync(join(root, 'assets/licenses'))) cpSync(join(root, 'assets/licenses'), join(dist, 'renderer/licenses'), { recursive: true });
 console.log('NAME ATELIER built → dist/');
