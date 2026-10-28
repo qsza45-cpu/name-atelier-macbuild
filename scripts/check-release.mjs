@@ -45,16 +45,18 @@ if (!packaged) {
   if (!existsSync(asarPath)) problems.push('release/win-unpacked/resources/app.asar not found');
   else {
     const asar = createRequire(import.meta.url)('@electron/asar');
-    const files = asar.listPackage(asarPath).map((f) => f.replace(/\\/g, '/'));
-    for (const f of files) {
+    // listPackage returns native paths (\dist\main.js on Windows); extractFile wants them without the leading separator.
+    const files = asar.listPackage(asarPath);
+    for (const raw of files) {
+      const f = raw.replace(/\\/g, '/');
       if (/admin-keygen|dist-admin|signing-key|\.pem$|\.key$/i.test(f)) problems.push(`app.asar lists ${f}`);
       if (/\.(js|html|json|txt|md)$/.test(f)) {
-        const text = asar.extractFile(asarPath, f.replace(/^\//, '')).toString('utf8');
+        const text = asar.extractFile(asarPath, raw.replace(/^[\\/]/, '')).toString('utf8');
         scanText(`app.asar${f}`, text);
         if (adminSecretB64 && text.includes(adminSecretB64)) problems.push(`app.asar${f}: contains the admin's stored private key`);
       }
     }
-    const main = asar.extractFile(asarPath, 'dist/main.js').toString('utf8');
+    const main = asar.extractFile(asarPath, join('dist', 'main.js')).toString('utf8');
     const pub = /LICENSE_PUBLIC_KEY_B64(?:: string)? = '([^']+)'/.exec(pubSrc)?.[1];
     if (!pub || !main.includes(pub)) problems.push('packaged main.js does not embed the release public key');
     if (adminStored && pub && adminStored.publicKey !== pub) problems.push("embedded public key does not match the admin tool's signing key on this computer");

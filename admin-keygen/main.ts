@@ -79,7 +79,8 @@ function createWindow() {
     win.webContents.once('did-finish-load', async () => {
       await new Promise((r) => setTimeout(r, 600));
       if (process.env.NAME_ATELIER_KEYGEN_SHOT_JS) {
-        const result = await win.webContents.executeJavaScript(process.env.NAME_ATELIER_KEYGEN_SHOT_JS);
+        // A failing test script must still end the run (and say why) instead of leaving the window open.
+        const result = await win.webContents.executeJavaScript(process.env.NAME_ATELIER_KEYGEN_SHOT_JS).catch((e) => ({ scriptError: String(e?.message ?? e) }));
         if (result !== undefined) writeFileSync(`${shot}.json`, JSON.stringify(result, null, 2));
       }
       await new Promise((r) => setTimeout(r, 600));
@@ -104,7 +105,9 @@ app.whenReady().then(() => {
       saveKey(dataDir(), k, 'created');
       console.log(`PUBLIC_KEY=${k.publicRawB64}`);
     } else console.log('BROKEN');
-    app.exit(0);
+    // Quit normally (never app.exit): the OS-encryption key that protects the stored private key is written to
+    // "Local State" only during a graceful shutdown. Exiting abruptly would leave the stored key unreadable.
+    app.quit();
     return;
   }
 
@@ -112,6 +115,8 @@ app.whenReady().then(() => {
   ipcMain.handle('key:create', () => {
     if (loadKey(dataDir()).state === 'ok') return { ok: false, error: '이미 서명 키가 있습니다. 교체하려면 백업에서 불러오기를 쓰세요.' };
     saveKey(dataDir(), newSigningKey(), 'created');
+    // Make sure the OS-encryption key reaches disk now rather than only at shutdown (see the INIT note above).
+    session.defaultSession.flushStorageData();
     return { ok: true };
   });
   ipcMain.handle('key:import', async (e) => {

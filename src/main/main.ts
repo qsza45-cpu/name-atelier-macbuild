@@ -206,7 +206,8 @@ function createWindow() {
       if (size) win.setContentSize(Number(size[1]), Number(size[2]));
       await new Promise((r) => setTimeout(r, 800));
       if (process.env.NAME_ATELIER_SHOT_JS) {
-        const result = await win.webContents.executeJavaScript(process.env.NAME_ATELIER_SHOT_JS);
+        // A failing test script must still end the run (and say why) instead of leaving the window open.
+        const result = await win.webContents.executeJavaScript(process.env.NAME_ATELIER_SHOT_JS).catch((e) => ({ scriptError: String(e?.message ?? e) }));
         if (result !== undefined) writeFileSync(`${shot}.json`, JSON.stringify(result, null, 2));
       }
       await new Promise((r) => setTimeout(r, 1200));

@@ -97,9 +97,15 @@ async function refresh() {
         button('새 서명 키 만들기', async () => {
           if (s.expected && !confirm('새 서명 키로 만든 인증키는 이미 배포된 NAME ATELIER에서 통하지 않습니다. 그래도 새로 만들까요?')) return;
           const r = await keygen.create();
-          if (r.ok) toast('새 서명 키를 만들었습니다. 바로 백업을 저장하세요');
-          else if (r.error) toast(r.error);
-          refresh();
+          if (!r.ok) {
+            if (r.error) toast(r.error);
+            return refresh();
+          }
+          await refresh();
+          // A new key exists only on this computer until it is backed up, so ask for the backup right away.
+          alert('새 서명 키를 만들었습니다. 이어서 백업 파일을 저장하세요. 이 백업이 없으면 키를 잃었을 때 복구할 수 없습니다.');
+          const b = await keygen.backup();
+          toast(b.saved ? `백업을 저장했습니다: ${b.path}` : '백업을 저장하지 않았습니다. 「비밀키 백업 저장」을 꼭 눌러 주세요.');
         }),
       );
   }

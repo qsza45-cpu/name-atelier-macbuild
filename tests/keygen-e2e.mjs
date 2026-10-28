@@ -28,7 +28,7 @@ const homeA = tmp('na-kg-a-');
 const exportDir = tmp('na-kg-out-');
 const flow = `(async () => {
   const s = (ms) => new Promise((r) => setTimeout(r, ms));
-  window.confirm = () => true;
+  window.confirm = () => true; window.alert = () => {};
   const btn = (t) => [...document.querySelectorAll('button')].find((b) => b.textContent.includes(t));
   const out = { before: document.querySelector('#key-status').textContent, issueDisabledBefore: document.querySelector('#issue-btn').disabled };
   out.issueWithoutKey = await keygen.issue(3);
@@ -78,10 +78,16 @@ const clip = execSync('powershell -NoProfile -Command "Get-Clipboard"', { encodi
 checks['copy: clipboard holds the 100 keys'] = clip.length === 100 && clip[0] === keys[0] && clip[99] === keys[99];
 checks['backup file written'] = !!pem && readFileSync(join(exportDir, pem), 'utf8').includes('BEGIN PRIVATE KEY');
 
+// Next launch of the same home: the stored (OS-encrypted) key must still open — this caught a lost-key bug.
+const a2 = run('1b-reopen', { NAME_ATELIER_KEYGEN_HOME: homeA }, `(async () => { const s = await keygen.status(); const r = await keygen.issue(1); return { state: s.state, fp: s.fingerprint, key: r.keys?.[0]?.key }; })()`);
+const fpA0 = /지문 ([0-9A-F-]{19})/.exec(a?.after ?? '')?.[1];
+checks['stored key opens again on the next launch'] = a2?.state === 'ok' && a2.fp === fpA0 && L.checkLicense(a2?.key ?? '', pub).ok;
+checks['new key: backup offered right after creation'] = readdirSync(exportDir).filter((f) => f.endsWith('.pem')).length >= 1;
+
 // Restore the backup on a "new computer" (empty home): same fingerprint, keys still valid.
 const homeB = tmp('na-kg-b-');
 const b = run('2-import', { NAME_ATELIER_KEYGEN_HOME: homeB, NAME_ATELIER_KEYGEN_IMPORT_FILE: join(exportDir, pem ?? 'x') }, `(async () => {
-  window.confirm = () => true;
+  window.confirm = () => true; window.alert = () => {};
   [...document.querySelectorAll('button')].find((x) => x.textContent.includes('백업에서 불러오기')).click();
   await new Promise((r) => setTimeout(r, 600));
   const r = await keygen.issue(1);
