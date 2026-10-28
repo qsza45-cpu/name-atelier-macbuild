@@ -40,6 +40,11 @@
       "!dist/**/*.map"
     ],
     "npmRebuild": false,
+    "electronLanguages": [
+      "ko",
+      "en-US"
+    ],
+    "compression": "maximum",
     "win": {
       "target": [
         "nsis",
