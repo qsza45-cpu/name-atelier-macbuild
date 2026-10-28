@@ -1,6 +1,7 @@
 # macOS builds of the USER app (NAME ATELIER). Runs only when started by hand (Actions → macOS build → Run workflow)
-# or for a v* tag, to keep macOS runner minutes low. Each CPU type is built and tested on its own kind of Mac:
-# Apple Silicon on macos-14, Intel on macos-13. The admin key generator is Windows-only and never built here;
+# or for a v* tag, to keep macOS runner minutes low. Both CPU types are built on macos-14 (Apple Silicon); GitHub's
+# Intel runner (macos-13) no longer picks up jobs, so the Intel app is cross-built there and its launch check runs
+# under Rosetta 2. The admin key generator is Windows-only and never built here;
 # no signing key exists on CI — the app only carries the public key.
 name: macOS build
 
@@ -21,7 +22,7 @@ jobs:
           - runner: macos-14
             arch: arm64
             label: AppleSilicon
-          - runner: macos-13
+          - runner: macos-14
             arch: x64
             label: Intel
     runs-on: ${{ matrix.runner }}
@@ -62,7 +63,11 @@ jobs:
           npx electron-builder --mac zip dmg --${{ matrix.arch }} --publish never
           node scripts/check-release.mjs --packaged
 
-      - name: Launch the packaged app (native on this Mac)
+      - name: Install Rosetta 2 (Intel build only)
+        if: matrix.arch == 'x64'
+        run: sudo softwareupdate --install-rosetta --agree-to-license
+
+      - name: Launch the packaged app (Intel build runs under Rosetta)
         run: node tests/launch-packaged.mjs
 
       - name: Upload
