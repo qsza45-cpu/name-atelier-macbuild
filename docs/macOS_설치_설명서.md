@@ -8,8 +8,8 @@ NAME ATELIER Mac 버전은 **Apple 공증(인증)을 받지 않은 무료 배포
 
 | 표시 | 받을 파일 |
 |---|---|
-| **칩: Apple M1 / M2 / M3 / M4 …** | `NAME ATELIER-0.2.0-arm64.dmg` (또는 `…-arm64-mac.zip`) |
-| **프로세서: Intel …** | `NAME ATELIER-0.2.0.dmg` (또는 `…-mac.zip`, 이름에 arm64가 없는 것) |
+| **칩: Apple M1 / M2 / M3 / M4 …** | `NAME ATELIER-0.2.0-arm64.dmg` |
+| **프로세서: Intel …** | 이번 0.2.0 배포에는 Intel용이 없습니다. 필요하면 배포자에게 요청해 주세요. |
 
 ## 2. 설치
 
