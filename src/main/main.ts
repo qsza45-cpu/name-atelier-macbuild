@@ -1,5 +1,5 @@
 // NAME ATELIER main process: one window, a JSON store in userData, clipboard and file export. No network.
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, session } from 'electron';
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_SETTINGS, type Favorite, type Settings, type StoreData } from '../shared/types';
@@ -97,10 +97,33 @@ function writeStore(): { ok: boolean; error?: string } {
   return { ok: false, error };
 }
 
+// Test runs (screenshot runs, or NAME_ATELIER_DISPLAY=2) open on the second monitor so they never cover the
+// user's work on the main one. Without a second monitor a test run stops instead of falling back to the main screen.
+const shot = !app.isPackaged && process.env.NAME_ATELIER_SHOT;
+const wantsSecondDisplay = !!shot || process.env.NAME_ATELIER_DISPLAY === '2';
+function secondDisplayBounds(w: number, h: number) {
+  const primary = screen.getPrimaryDisplay();
+  const d = screen.getAllDisplays().find((x) => x.id !== primary.id);
+  if (!d) return null;
+  const a = d.workArea;
+  return { x: Math.round(a.x + (a.width - w) / 2), y: Math.round(a.y + (a.height - h) / 2) };
+}
+
 function createWindow() {
   const isDark = store.settings.theme === 'dark' || (store.settings.theme === 'system' && nativeTheme.shouldUseDarkColors);
   const icon = join(__dirname, 'icon', 'app_icon_256.png');
+  let pos: { x: number; y: number } | undefined;
+  if (wantsSecondDisplay) {
+    const p = secondDisplayBounds(960, 680);
+    if (!p) {
+      console.error('NAME ATELIER: 모니터 2를 찾지 못해 시험 실행을 중단합니다.');
+      app.exit(3);
+      return;
+    }
+    pos = p;
+  }
   const win = new BrowserWindow({
+    ...(pos ?? {}),
     width: 960,
     height: 680,
     minWidth: 760,
@@ -113,7 +136,6 @@ function createWindow() {
   });
   win.once('ready-to-show', () => win.show());
   // Dev-only screenshot run (ignored in packaged builds): NAME_ATELIER_SHOT=<out.png> [NAME_ATELIER_SHOT_JS=<script>]
-  const shot = !app.isPackaged && process.env.NAME_ATELIER_SHOT;
   if (shot) {
     win.webContents.once('did-finish-load', async () => {
       const size = process.env.NAME_ATELIER_SHOT_SIZE?.match(/^(\d+)x(\d+)$/);

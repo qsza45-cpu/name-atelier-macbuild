@@ -27,6 +27,14 @@ npx electron scripts/make-icon.cjs "C:/Users/User/Downloads/홍보용 이미지/
 ## 디자인 자산 적용
 `assets/design/README.md` 참고. 파일 복사 → `npm run build` → `npm start`로 확인.
 
+## 시험 창은 모니터 2에서만
+- 개발용 화면 캡처 실행(`NAME_ATELIER_SHOT=<png>`)은 자동으로 **모니터 2**에 창을 띄웁니다. 모니터 2가 없으면 실행하지 않고 끝납니다(종료 코드 3).
+- 패키지된 실행 파일을 확인할 때는 `NAME_ATELIER_DISPLAY=2`를 붙여 실행합니다. 일반 사용자 실행에는 영향이 없습니다.
+
+```bash
+NAME_ATELIER_DISPLAY=2 "release/win-unpacked/NAME ATELIER.exe"
+```
+
 ## 테스트
 - `npm test` — 이름 엔진(조합·중복·성별·문화권 섞임·금칙어·내보내기)
 - `npm run check:data` — 데이터 검수(개수·중복·빈 칸·표기 문자·금칙어)
