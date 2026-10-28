@@ -2,43 +2,60 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, session } from 'electron';
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_SETTINGS, type Favorite, type Settings, type StoreData } from '../shared/types';
+import { DEFAULT_SETTINGS, DEFAULT_WORK, MAX_FAVORITES, type Favorite, type Settings, type StoreData, type WorkSettings } from '../shared/types';
 import { GENDERS, GENRES, REGIONS, STYLE_OPTIONS } from '../engine/generate';
 
 // Tests point the store elsewhere so they never touch the real favourites.
 if (process.env.NAME_ATELIER_HOME) app.setPath('userData', process.env.NAME_ATELIER_HOME);
 
 const storePath = () => join(app.getPath('userData'), 'name-atelier-data.json');
-const MAX_FAVORITES = 5000;
 
 // Everything that reaches the store goes through these, so a bad file or payload can't break drawing.
 const oneOf = <T extends string>(v: unknown, ok: readonly T[], dflt: T): T => (ok.includes(v as T) ? (v as T) : dflt);
 const STYLE_IDS = STYLE_OPTIONS.map((s) => s.id);
 const GENRE_IDS = GENRES.map((g) => g.id);
 const GENDER_IDS = GENDERS.map((g) => g.id);
-function cleanSettings(raw: any): Settings {
+function cleanWork(raw: any): WorkSettings {
   const s = raw && typeof raw === 'object' ? raw : {};
   const last = s.last && typeof s.last === 'object' ? s.last : {};
-  const regionStyle: Settings['regionStyle'] = {};
+  const regionStyle: WorkSettings['regionStyle'] = {};
   for (const r of REGIONS) {
     const v = s.regionStyle?.[r.id];
     if (r.styles.includes(v)) regionStyle[r.id] = v;
   }
   return {
-    theme: oneOf(s.theme, ['system', 'light', 'dark'] as const, DEFAULT_SETTINGS.theme),
-    animation: typeof s.animation === 'boolean' ? s.animation : DEFAULT_SETTINGS.animation,
     last: {
-      genre: oneOf(last.genre, GENRE_IDS, DEFAULT_SETTINGS.last.genre),
-      style: oneOf(last.style, STYLE_IDS, DEFAULT_SETTINGS.last.style),
-      gender: oneOf(last.gender, GENDER_IDS, DEFAULT_SETTINGS.last.gender),
+      genre: oneOf(last.genre, GENRE_IDS, DEFAULT_WORK.last.genre),
+      style: oneOf(last.style, STYLE_IDS, DEFAULT_WORK.last.style),
+      gender: oneOf(last.gender, GENDER_IDS, DEFAULT_WORK.last.gender),
     },
     regionStyle,
     cond: {
       len: oneOf(s.cond?.len, ['any', '1', '2', '3', '4+'] as const, 'any'),
       first: typeof s.cond?.first === 'string' ? s.cond.first.trim().slice(0, 2) : '',
       final: oneOf(s.cond?.final, ['any', 'yes', 'no'] as const, 'any'),
+      era: oneOf(s.cond?.era, ['any', 'm', 'c'] as const, 'any'),
+      tone: oneOf(s.cond?.tone, ['any', 's', 'h'] as const, 'any'),
+      flair: oneOf(s.cond?.flair, ['any', 'p', 'f'] as const, 'any'),
     },
     avoidText: typeof s.avoidText === 'string' ? s.avoidText.slice(0, 20000) : '',
+  };
+}
+function cleanSettings(raw: any): Settings {
+  const s = raw && typeof raw === 'object' ? raw : {};
+  const workspaces: Settings['workspaces'] = {};
+  if (s.workspaces && typeof s.workspaces === 'object') {
+    for (const [name, w] of Object.entries(s.workspaces).slice(0, 200)) if (name.trim() && name.length <= 60) workspaces[name.trim()] = cleanWork(w);
+  }
+  const work = typeof s.work === 'string' && workspaces[s.work.trim()] ? s.work.trim() : '';
+  return {
+    ...cleanWork(s),
+    theme: oneOf(s.theme, ['system', 'light', 'dark'] as const, DEFAULT_SETTINGS.theme),
+    animation: typeof s.animation === 'boolean' ? s.animation : DEFAULT_SETTINGS.animation,
+    keepFavorites: typeof s.keepFavorites === 'boolean' ? s.keepFavorites : DEFAULT_SETTINGS.keepFavorites,
+    tipsSeen: s.tipsSeen === true,
+    work,
+    workspaces,
   };
 }
 function cleanFavorites(raw: unknown): Favorite[] {
@@ -60,6 +77,7 @@ function cleanFavorites(raw: unknown): Favorite[] {
       ...(Array.isArray(f.nick) && f.nick.length ? { nick: f.nick.filter((x: unknown) => typeof x === 'string').slice(0, 5).map((x: string) => x.slice(0, 20)) } : {}),
       ...(typeof f.memo === 'string' && f.memo ? { memo: str(f.memo, 2000) } : {}),
       ...(typeof f.work === 'string' && f.work.trim() ? { work: str(f.work.trim(), 60) } : {}),
+      ...(f.confirmed === true ? { confirmed: true } : {}),
     }));
 }
 
@@ -142,7 +160,8 @@ function createWindow() {
     backgroundColor: isDark ? '#16111A' : '#F4EDE2',
     show: false,
     icon: existsSync(icon) ? icon : undefined,
-    webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
+    webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, // Test windows sit unfocused on monitor 2; without this their timers (card flips) are throttled.
+      backgroundThrottling: !shot },
   });
   win.once('ready-to-show', () => win.show());
   // Dev-only screenshot run (ignored in packaged builds): NAME_ATELIER_SHOT=<out.png> [NAME_ATELIER_SHOT_JS=<script>]

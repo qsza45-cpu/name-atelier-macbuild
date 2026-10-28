@@ -164,25 +164,25 @@ for (const style of ['ko', 'rofan', 'de', 'jp', 'xianxia', 'murim', 'fantasy']) 
 {
   const finalOf = (ch) => (ch.charCodeAt(0) - 0xac00) % 28;
   const cases = [
-    { style: 'ko', cond: { len: '2', first: '서', final: 'any' }, ok: (g) => g.length === 2 && g[0] === '서' },
-    { style: 'ko', cond: { len: 'any', first: 'ㅎ', final: 'no' }, ok: (g) => Math.floor((g.charCodeAt(0) - 0xac00) / 588) === 18 && finalOf(g.at(-1)) === 0 },
-    { style: 'gb', cond: { len: '4+', first: '', final: 'any' }, ok: (g) => g.length >= 4 },
-    { style: 'murim', cond: { len: '1', first: '', final: 'yes' }, ok: (g) => g.length === 1 && finalOf(g) !== 0 },
-    { style: 'xianxia', cond: { len: '2', first: 'ㅇ', final: 'any' }, ok: (g) => g.length === 2 && Math.floor((g.charCodeAt(0) - 0xac00) / 588) === 11 },
-    { style: 'fantasy', cond: { len: '3', first: '', final: 'yes' }, ok: (g) => g.length === 3 && finalOf(g.at(-1)) !== 0 },
+    { style: 'ko', cond: { ...E.NO_CONDITIONS, len: '2', first: '서', final: 'any' }, ok: (g) => g.length === 2 && g[0] === '서' },
+    { style: 'ko', cond: { ...E.NO_CONDITIONS, len: 'any', first: 'ㅎ', final: 'no' }, ok: (g) => Math.floor((g.charCodeAt(0) - 0xac00) / 588) === 18 && finalOf(g.at(-1)) === 0 },
+    { style: 'gb', cond: { ...E.NO_CONDITIONS, len: '4+', first: '', final: 'any' }, ok: (g) => g.length >= 4 },
+    { style: 'murim', cond: { ...E.NO_CONDITIONS, len: '1', first: '', final: 'yes' }, ok: (g) => g.length === 1 && finalOf(g) !== 0 },
+    { style: 'xianxia', cond: { ...E.NO_CONDITIONS, len: '2', first: 'ㅇ', final: 'any' }, ok: (g) => g.length === 2 && Math.floor((g.charCodeAt(0) - 0xac00) / 588) === 11 },
+    { style: 'fantasy', cond: { ...E.NO_CONDITIONS, len: '3', first: '', final: 'yes' }, ok: (g) => g.length === 3 && finalOf(g.at(-1)) !== 0 },
   ];
   for (const c of cases) {
     const r = E.generate({ genre: 'fantasy', style: c.style, gender: 'any', count: 10, cond: c.cond, rng: E.seeded(41) });
     check(`cond ${c.style} ${JSON.stringify(c.cond)}`, r.names.length > 0 && r.names.every((n) => c.ok(n.given.replace(/\s/g, ''))), r.names.map((n) => n.given).join(','));
   }
-  const none = E.generate({ genre: 'fantasy', style: 'murim', gender: 'any', count: 3, cond: { len: '3', first: '', final: 'any' }, rng: E.seeded(1) });
+  const none = E.generate({ genre: 'fantasy', style: 'murim', gender: 'any', count: 3, cond: { ...E.NO_CONDITIONS, len: '3', first: '', final: 'any' }, rng: E.seeded(1) });
   check('impossible cond returns nothing quickly', none.names.length === 0);
 }
 
 // 9. 피할 이름: same full name, same given name, endings.
 {
   const avoid = E.parseNameList('유연서, 이서희\n레티시아 로젠베르크 (Laetitia Rosenberg)\n하윤');
-  check('parse list', JSON.stringify(avoid) === JSON.stringify(['유연서', '이서희', '레티시아로젠베르크', '하윤']), JSON.stringify(avoid));
+  check('parse list', JSON.stringify(avoid) === JSON.stringify(['유연서', '이서희', '레티시아 로젠베르크', '하윤']), JSON.stringify(avoid));
   check('clash same given', !!E.clashesWith({ ko: '김연서', given: '연서' }, avoid));
   check('clash ends with avoided given', !!E.clashesWith({ ko: '박하윤', given: '하윤' }, avoid));
   check('no clash unrelated', !E.clashesWith({ ko: '김도윤', given: '도윤' }, avoid));
@@ -202,6 +202,67 @@ for (const style of ['ko', 'rofan', 'de', 'jp', 'xianxia', 'murim', 'fantasy']) 
   let withNick = 0;
   for (let i = 0; i < 60; i++) for (const n of E.generate({ genre: 'romance', style: 'gb', gender: 'f', count: 3, rng }).names) if (n.nick?.length) withNick++;
   check('some western names carry nicknames', withNick > 10, `${withNick}`);
+}
+
+// 11. 피할 이름 — given-first (western) and Japanese entries clash on the given-name part.
+{
+  const avoid = E.parseNameList('레티시아 로젠베르크\n사토 하루토\n유연서');
+  check('western given clash', !!E.clashesWith({ ko: '레티시아 랭커스터', given: '레티시아' }, avoid));
+  check('japanese given clash', !!E.clashesWith({ ko: '다나카 하루토', given: '하루토' }, avoid));
+  check('same surname is not a clash', !E.clashesWith({ ko: '아델라 로젠베르크', given: '아델라' }, avoid));
+  check('name parts preview', JSON.stringify(E.nameParts('레티시아 로젠베르크')) === JSON.stringify(['레티시아', '로젠베르크']));
+  const rng = E.seeded(81);
+  let hit = 0;
+  const av2 = E.parseNameList('레티시아 로젠베르크, 이졸데 리비에라, 오필리아 메디나');
+  for (let i = 0; i < 60; i++) for (const n of E.generate({ genre: 'romance', style: 'rofan', gender: 'f', count: 3, avoidNames: av2, rng }).names) if (['레티시아', '이졸데', '오필리아'].includes(n.given)) hit++;
+  check('rofan draws skip avoided given names', hit === 0, `${hit}`);
+}
+
+// 12. 분위기 — every drawn real/hanja name carries the selected tags; invented names follow the sound rule.
+{
+  const tagOf = (style) => {
+    const S = E.STYLES.find((s) => s.id === style);
+    return S ? new Map(S.given.map((g) => [g.ko, g])) : null;
+  };
+  for (const [style, mood] of [
+    ['ko', { era: 'm', tone: 's', flair: 'any' }],
+    ['gb', { era: 'c', tone: 'any', flair: 'f' }],
+    ['de', { era: 'any', tone: 'h', flair: 'p' }],
+    ['rofan', { era: 'c', tone: 's', flair: 'f' }],
+  ]) {
+    const map = tagOf(style);
+    const r = E.generate({ genre: 'romance', style, gender: 'any', count: 12, cond: { ...E.NO_CONDITIONS, ...mood }, rng: E.seeded(91) });
+    const bad = r.names.filter((n) => {
+      const g = map.get(n.given);
+      return !g || Object.entries(mood).some(([k, v]) => v !== 'any' && g[k] !== v);
+    });
+    check(`mood ${style} ${JSON.stringify(mood)}`, r.names.length === 12 && bad.length === 0, bad.map((n) => n.ko).join(','));
+  }
+  const hanjaTags = new Map([...E.MURIM.given, ...E.XIANXIA.given].map((g) => [g.hanja, g]));
+  const rh = E.generate({ genre: 'murim', style: 'xianxia', gender: 'f', count: 12, cond: { ...E.NO_CONDITIONS, tone: 's', era: 'c' }, rng: E.seeded(92) });
+  const badH = rh.names.filter((n) => [...n.orig].slice(-(n.given.length)).some((c) => hanjaTags.get(c) && (hanjaTags.get(c).tone !== 's' || hanjaTags.get(c).era !== 'c')));
+  check('mood hanja syllables', rh.names.length === 12 && badH.length === 0, badH.map((n) => n.ko).join(','));
+  const rf = E.generate({ genre: 'fantasy', style: 'fantasy', gender: 'any', count: 12, cond: { ...E.NO_CONDITIONS, tone: 'h' }, rng: E.seeded(93) });
+  check('mood invented by sound', rf.names.length === 12 && rf.names.every((n) => E.soundTone(n.given) === 'h'));
+  // Two-character hanja names mostly stay in one register (soft+soft or hard+hard).
+  let mixed = 0;
+  let pairs = 0;
+  const rng = E.seeded(94);
+  for (let i = 0; i < 400; i++) {
+    const [n] = E.generate({ genre: 'murim', style: 'murim', gender: 'any', count: 1, cond: { ...E.NO_CONDITIONS, len: '2' }, rng }).names;
+    const [a, b] = [...n.orig].slice(-2).map((c) => hanjaTags.get(c)?.tone);
+    if (a && b) {
+      pairs++;
+      if (a !== b) mixed++;
+    }
+  }
+  check('hanja names keep one register', pairs > 300 && mixed / pairs < 0.35, `${mixed}/${pairs}`);
+}
+
+// 13. CSV formula guard.
+{
+  const csv = E.toCsv([{ ko: '김서윤', orig: 'Kim Seo-yun', genre: 'modern', style: 'ko', gender: 'f', memo: '=1+1', work: '@작품' }]);
+  check('csv neutralizes formulas', csv.includes("'=1+1") && csv.includes("'@작품"));
 }
 
 writeFileSync(join(root, 'tests', 'last-pool-sizes.json'), JSON.stringify(report, null, 2));

@@ -40,7 +40,12 @@ export function toTxt(rows: ExportRow[], title: string) {
   return lines.join('\r\n') + '\r\n';
 }
 
-const cell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+// A cell starting with = + - @ (or tab/CR) would run as a formula in Excel, so it gets a leading apostrophe.
+const neutralize = (v: string) => (/^[=+\-@\t\r]/.test(v) ? `'${v}` : v);
+const cell = (raw: string) => {
+  const v = neutralize(raw);
+  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+};
 export function toCsv(rows: ExportRow[]) {
   const head = ['이름', '원어 표기', '로마자', '장르', '이름 스타일', '성별 분류', '저장일', '한자 뜻·애칭', '작품', '메모'];
   const body = rows.map((r) => [r.ko, r.style === 'ko' ? '' : r.orig, r.roman ?? '', label.genre(r.genre), label.style(r.style), label.gender(r.gender), day(r.savedAt), extraOf(r), r.work ?? '', r.memo ?? ''].map(cell).join(','));

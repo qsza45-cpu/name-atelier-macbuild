@@ -1,6 +1,6 @@
 // Name engine: picks real names from the curated per-culture lists (src/data/names) and builds 창작 판타지식 names from
 // syllable pools. Pure and offline; pass an rng for reproducible tests.
-import type { Genre, G, GivenName, StyleData, Surname } from '../data/types';
+import type { Era, Flair, Genre, G, GivenName, Mood, StyleData, Surname, Tone } from '../data/types';
 import { FANTASY, MURIM, STYLES, XIANXIA } from '../data/names';
 import type { HanjaPools, HanjaSyl } from '../data/names/hanja';
 import { BLOCK_SUBSTRINGS } from '../data/blocklist';
@@ -69,14 +69,41 @@ export interface SurnamePart {
   meaning?: string;
 }
 
-/** 조건 뽑기, applied to the Korean given name. */
+/** 조건 뽑기, applied to the Korean given name; era/tone/flair select by the reviewed mood tags (분위기). */
 export interface NameConditions {
   len: 'any' | '1' | '2' | '3' | '4+'; // syllables in the given name
   first: string; // first syllable (연) or initial consonant (ㅇ); '' = any
   final: 'any' | 'yes' | 'no'; // last syllable has a 받침
+  era: 'any' | Era; // 현대적 / 고전적
+  tone: 'any' | Tone; // 부드러운 / 강한
+  flair: 'any' | Flair; // 평범한 / 화려한
 }
-export const NO_CONDITIONS: NameConditions = { len: 'any', first: '', final: 'any' };
-export const hasConditions = (c?: NameConditions) => !!c && (c.len !== 'any' || !!c.first || c.final !== 'any');
+export const NO_CONDITIONS: NameConditions = { len: 'any', first: '', final: 'any', era: 'any', tone: 'any', flair: 'any' };
+export const hasMood = (c?: NameConditions) => !!c && (c.era !== 'any' || c.tone !== 'any' || c.flair !== 'any');
+export const hasConditions = (c?: NameConditions) => !!c && (c.len !== 'any' || !!c.first || c.final !== 'any' || hasMood(c));
+export const MOOD_LABEL = { era: { m: '현대적', c: '고전적' }, tone: { s: '부드러운', h: '강한' }, flair: { p: '평범한', f: '화려한' } } as const;
+
+/** Does a tagged entry match the selected mood? Untagged entries only pass axes left at 'any'. */
+export function meetsMood(m: Mood, cond?: NameConditions): boolean {
+  if (!cond) return true;
+  return (cond.era === 'any' || m.era === cond.era) && (cond.tone === 'any' || m.tone === cond.tone) && (cond.flair === 'any' || m.flair === cond.flair);
+}
+
+// 창작 판타지식 has no reviewed tags; its 느낌 is judged from the sounds (hard consonants vs liquids and vowels).
+const HARD_INITIALS = new Set([0, 1, 3, 4, 7, 8, 12, 13, 14, 15, 16, 17]); // ㄱㄲㄷㄸㅂㅃㅈㅉㅊㅋㅌㅍ
+const HARD_FINALS = new Set([1, 2, 7, 17, 19, 21, 22, 23, 24, 25, 26]); // ㄱㄲㄷㅂㅅㅆㅈㅊㅋㅌㅍ (ㄴㄹㅁㅇ count as soft)
+export function soundTone(name: string): Tone {
+  let hard = 0;
+  let total = 0;
+  for (const ch of name.replace(/\s+/g, '')) {
+    const c = ch.charCodeAt(0) - 0xac00;
+    if (c < 0 || c > 11171) continue;
+    total++;
+    if (HARD_INITIALS.has(Math.floor(c / 588))) hard++;
+    if (HARD_FINALS.has(c % 28)) hard += 0.6;
+  }
+  return total && hard / total >= 0.55 ? 'h' : 's';
+}
 
 export interface GenerateRequest {
   genre: Genre;
@@ -124,25 +151,42 @@ export function meetsConditions(given: string, cond?: NameConditions): boolean {
 }
 
 // ------------------------------------------------------------------ 이미 쓴 이름
-/** Normalises a pasted list (commas, newlines, 「·」, parentheses with original spellings) into compact Korean names. */
+/**
+ * Normalises a pasted list (commas, newlines, 「·」, parentheses with original spellings) into Korean names.
+ * Spaces inside a name are kept (single space) because they mark the parts of western/Japanese names.
+ */
 export function parseNameList(text: string): string[] {
   return [
     ...new Set(
       text
         .split(/[\n,，、;·]+/)
-        .map((s) => s.replace(/\(.*?\)|\[.*?\]/g, '').replace(/\s+/g, ''))
+        .map((s) => s.replace(/\(.*?\)|\[.*?\]/g, '').replace(/[^가-힣\s]/g, '').replace(/\s+/g, ' ').trim())
         .filter((s) => /[가-힣]/.test(s) && s.length <= 30),
     ),
   ];
 }
-/** Same full name, same given name, or one ending in the other (유연서 ↔ 김연서 ↔ 연서). */
+/** How an avoided name is read: its parts, for the 「피할 이름」 preview (레티시아 로젠베르크 → 레티시아 · 로젠베르크). */
+export const nameParts = (a: string) => a.split(' ').filter(Boolean);
+
+/**
+ * Clash rules:
+ *  - same full name, or the candidate's given name equals a whole avoided entry;
+ *  - spaced entries (레티시아 로젠베르크, 사토 하루토): any part equal to the candidate's given name;
+ *  - unspaced Korean entries (유연서): the same given name after a surname (김연서), or the candidate ends with it.
+ */
 export function clashesWith(n: Pick<NameResult, 'ko' | 'given'>, avoid: string[]): string | null {
   const full = compact(n.ko);
   const given = compact(n.given);
-  for (const a of avoid) {
-    if (a === full || a === given) return a;
-    if (given.length >= 2 && a.length > given.length && a.endsWith(given)) return a;
-    if (a.length >= 2 && full.length > a.length && full.endsWith(a)) return a;
+  for (const entry of avoid) {
+    const a = compact(entry);
+    if (a === full || a === given) return entry;
+    const parts = nameParts(entry);
+    if (parts.length > 1) {
+      if (given.length >= 2 && parts.includes(given)) return entry;
+      continue;
+    }
+    if (given.length >= 2 && a.length > given.length && a.endsWith(given)) return entry;
+    if (a.length >= 2 && full.length > a.length && full.endsWith(a)) return entry;
   }
   return null;
 }
@@ -235,7 +279,7 @@ function hanjaMeaning(hanja: string, reading: string, hun?: string): string[] {
 // 선협식·무협식: surname + one or two hanja syllables. The first given syllable uses its word-initial reading
 // (蓮 → 연화), later ones the plain reading (청련). orig shows the hanja (白蓮花).
 function hanjaName(styleId: StyleId, pools: HanjaPools, req: GenerateRequest, rng: () => number): NameResult | undefined {
-  const fits = (s: HanjaSyl) => req.gender === 'any' || s.g === req.gender || s.g === 'u';
+  const fits = (s: HanjaSyl) => (req.gender === 'any' || s.g === req.gender || s.g === 'u') && meetsMood(s, req.cond);
   const pool = pools.given.filter(fits);
   if (!pool.length || !pools.surnames.length) return undefined;
   const fixed = req.fixedSurname?.style === styleId ? req.fixedSurname : undefined;
@@ -245,11 +289,13 @@ function hanjaName(styleId: StyleId, pools: HanjaPools, req: GenerateRequest, rn
   if (len === '3' || len === '4+') return undefined;
   const count = len === '1' ? 1 : len === '2' ? 2 : rng() < 0.85 ? 2 : 1;
   const first = req.cond?.first.trim();
-  const firstPool = first ? pool.filter((s) => meetsConditions(s.initial ?? s.ko, { len: 'any', first, final: 'any' })) : pool;
+  const firstPool = first ? pool.filter((s) => meetsConditions(s.initial ?? s.ko, { ...NO_CONDITIONS, first })) : pool;
   if (!firstPool.length) return undefined;
   const syls = [pick(firstPool, rng)];
   if (count === 2) syls.push(pick(pool, rng));
   if (syls.length === 2 && syls[0].hanja === syls[1].hanja) return undefined;
+  // Keep a two-character name in one register: a soft character next to a hard one (月 + 劍) is usually rejected.
+  if (syls.length === 2 && syls[0].tone && syls[1].tone && syls[0].tone !== syls[1].tone && rng() < 0.7) return undefined;
   const readings: string[] = [];
   syls.forEach((s, i) => {
     let r = i === 0 ? s.initial ?? s.ko : s.ko;
@@ -287,6 +333,8 @@ function inventedName(req: GenerateRequest, rng: () => number): NameResult | und
   const given = parts.join('');
   for (let i = 1; i < given.length; i++) if (given[i] === given[i - 1] || vowelEcho(given[i - 1], given[i])) return undefined;
   if (given.length < 2 || given.length > 5) return undefined;
+  // Only 느낌 applies to invented names (judged from the sounds); 시대감·개성 have no reviewed tags here.
+  if (req.cond && req.cond.tone !== 'any' && soundTone(given) !== req.cond.tone) return undefined;
   // A family name suits fantasy/romance characters; modern-genre invented names stay single (unless 성 고정).
   const fixed = req.fixedSurname?.style === 'fantasy' ? req.fixedSurname : undefined;
   const surnameChance = req.genre === 'modern' ? 0 : 0.6;
@@ -301,9 +349,10 @@ export function generate(req: GenerateRequest): GenerateResponse {
   const exclude = new Set(req.exclude ?? []);
   const style = STYLES.find((s) => s.id === req.style);
   const hanja = HANJA_STYLES[req.style];
-  const avoidNames = (req.avoidNames ?? []).map(compact).filter(Boolean);
+  // Keep the spaces: they mark the parts of western/Japanese names for clashesWith.
+  const avoidNames = (req.avoidNames ?? []).map((a) => a.replace(/\s+/g, ' ').trim()).filter(Boolean);
   // Real names: filter the given-name list up front so strict conditions don't depend on luck.
-  const givenPool = style ? style.given.filter((g) => meetsConditions(g.ko, req.cond)) : [];
+  const givenPool = style ? style.given.filter((g) => meetsConditions(g.ko, req.cond) && meetsMood(g, req.cond)) : [];
   const make = () => (req.style === 'fantasy' ? inventedName(req, rng) : hanja ? hanjaName(req.style, hanja.pools, req, rng) : style ? realName(style, givenPool, req, rng) : undefined);
   const tries = hasConditions(req.cond) || avoidNames.length || req.fixedSurname ? MAX_TRIES_FILTERED : MAX_TRIES_PER_NAME;
   const names: NameResult[] = [];

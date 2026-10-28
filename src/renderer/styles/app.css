@@ -34,6 +34,12 @@ button:disabled { opacity: 0.45; cursor: default; }
 .head-sub b { font-family: var(--font-name); font-size: 15px; }
 .head-sub span { font-size: 12px; color: var(--muted); }
 
+.head .spacer { flex: 1; }
+.work-pick { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.work-pick select { width: 190px; height: 32px; padding: 4px 8px; }
+.help-btn { font-weight: 700; font-size: 15px; }
+@media (max-width: 900px) { .head-sub span { display: none; } .work-pick select { width: 150px; } }
+
 /* ② 선택 띠 */
 .pickers { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; padding: 4px 0 8px; }
 .pick-label { font-size: 12px; color: var(--muted); min-width: 64px; }
@@ -64,6 +70,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   .pickers { gap: 6px 14px; padding: 2px 0 4px; }
   .chip, .seg.region { height: 26px; }
   .draw-row { height: 80px; }
+  .side-btn { height: 36px; min-width: 66px; }
   .draw { height: 50px; font-size: 18px; }
   .foot { height: 44px; }
   .front { padding: 20px; }
@@ -149,6 +156,21 @@ button:disabled { opacity: 0.45; cursor: default; }
 .no-anim .draw::after { display: none; }
 @keyframes shine { 0%, 70% { left: -60%; } 100% { left: 130%; } }
 .draw-note { font-size: 12px; color: var(--muted); min-height: 16px; }
+.draw-line { display: flex; align-items: center; gap: 14px; }
+.side-btn { height: 40px; min-width: 76px; padding: 0 12px; border-radius: 20px; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 88%, transparent); font-size: 13px; color: var(--text); }
+.side-btn:hover:not(:disabled) { border-color: var(--gold); }
+.tip-bar { color: var(--text); display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
+.drawer-note { font-size: 12px; color: var(--muted); padding: 0 18px 10px; margin: 0; border-bottom: 1px solid var(--line); line-height: 1.6; }
+.drawer-tools .scope { font-size: 12px; color: var(--muted); margin-right: auto; align-self: center; }
+.cap { font-size: 13px; color: var(--accent); font-family: var(--font-ui); }
+.work-tag.confirmed { color: var(--accent); border-color: var(--accent); }
+.fav-edit label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 12px; }
+.fav-edit label.check input { width: 16px; height: 16px; accent-color: var(--accent); }
+.parsed { display: flex; flex-wrap: wrap; gap: 4px; max-height: 96px; overflow: auto; margin-bottom: 6px; }
+.work-list { list-style: none; padding: 0; margin: 8px 0 0; }
+.work-list .actions { display: inline-flex; gap: 6px; }
+.dialog form.row { gap: 8px; }
+.dialog form.row .text-in { flex: 1; }
 .draw-note.warn { color: var(--accent); }
 .lock-note { display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
 .lock-note svg { width: 14px; height: 14px; color: var(--accent); }

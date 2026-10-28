@@ -29,6 +29,10 @@ const checks = {
   'east region chips': JSON.stringify(res.eastChips) === JSON.stringify(['선협식', '무협식', '일본식']),
   'region remembers style': res.westRemembered === '독일식',
   'drawer lists favourites': res.drawerItems === 3,
+  '이전 뽑기 restores the previous cards': res.undoRestores,
+  'new work becomes active': res.workActive === '시험작품',
+  'default work keeps its style': res.defaultStyleBack === '독일식',
+  'work remembers its own style': res.workStyleBack === '무협식',
 };
 const failed = Object.entries(checks).filter(([, ok]) => !ok);
 console.log(`e2e: ${Object.keys(checks).length - failed.length} passed, ${failed.length} failed`);

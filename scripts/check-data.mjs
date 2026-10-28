@@ -20,7 +20,7 @@ function stripTypes(src) {
   return src
     .replace(/^\s*import\s+type[^;]*;\s*$/gm, '')
     .replace(/^\s*export\s+type\s*\{[^}]*\}[^;]*;\s*$/gm, '')
-    .replace(/export\s+interface\s+\w+\s*\{[^}]*\}\s*/g, '')
+    .replace(/export\s+interface\s+\w+(\s+extends\s+[\w,\s]+)?\s*\{[^}]*\}\s*/g, '')
     .replace(/(export\s+const\s+\w+)\s*:\s*[\w[\]<>]+\s*=/g, '$1 =');
 }
 async function load(rel) {
@@ -54,6 +54,19 @@ const hit = (s) => {
   for (const b of BLOCK) if (c.includes(b)) return b;
   return null;
 };
+
+// 분위기 태그: 모든 이름·한자 음절에 era(m/c)·tone(s/h)·flair(p/f)가 있어야 한다.
+const MOOD_OK = { era: ['m', 'c'], tone: ['s', 'h'], flair: ['p', 'f'] };
+const moodCount = {};
+function checkMood(n, where) {
+  const key = where.split(']')[0] + ']';
+  moodCount[key] ??= { m: 0, c: 0, s: 0, h: 0, p: 0, f: 0, total: 0 };
+  moodCount[key].total++;
+  for (const [axis, ok] of Object.entries(MOOD_OK)) {
+    if (!ok.includes(n[axis])) err(`${where}: 분위기 ${axis} 누락/오류 (${n[axis]})`);
+    else moodCount[key][n[axis]]++;
+  }
+}
 
 // ── 실재 문화권 + 로판 스타일 ──
 const files = { ko: 'names/ko.ts', rofan: 'names/rofan.ts', us: 'names/us.ts', gb: 'names/gb.ts', fr: 'names/fr.ts', de: 'names/de.ts', jp: 'names/jp.ts' };
@@ -99,6 +112,7 @@ for (const [id, st] of Object.entries(styles)) {
     const k = `${n.ko}|${n.g}`;
     if (seen.has(k)) err(`${P} 중복 given (ko+g): ${n.ko} ${n.g}`);
     seen.add(k);
+    checkMood(n, `${P} ${where}`);
     const ko2 = `${n.orig}|${n.g}`;
     if (seenOrig.has(ko2)) err(`${P} 중복 given (orig+g): ${n.orig} ${n.g}`);
     seenOrig.add(ko2);
@@ -134,7 +148,8 @@ for (const [id, st] of Object.entries(styles)) {
   const both = [...gb].filter((k) => us.has(k));
   const ratio = both.length / Math.min(us.size, gb.size);
   const line = `us/gb 이름 겹침 ${both.length}개 (${(ratio * 100).toFixed(1)}%)`;
-  if (ratio > 0.15) err(`${line} > 15%: ${both.join(', ')}`);
+  // 두 스타일의 차이를 지키기 위해 겹침은 현재 수준(14개, 6%)을 넘기지 않는다.
+  if (both.length > 14 || ratio > 0.06) err(`${line}: 한도(14개·6%) 초과 → ${both.join(', ')}`);
   else console.log(`· ${line}: ${both.join(', ')}`);
 }
 
@@ -202,6 +217,9 @@ for (const [id, st] of Object.entries(styles)) {
       if (gSeen.has(g.hanja)) err(`${P} 중복 given ${g.hanja}`);
       gSeen.add(g.hanja);
       if (hit(g.ko)) err(`${P} 차단어 음절 ${g.ko}`);
+      if (!g.hun) err(`${P} 훈 누락 ${g.hanja}`);
+      else if (!/^[가-힣]+( [가-힣]+)*$/.test(g.hun)) err(`${P} 훈 형식 ${g.hanja} → ${g.hun}`);
+      checkMood(g, `${P} given ${g.hanja}`);
     }
     if (pool.surnames.length < 40) err(`${P} surname ${pool.surnames.length}개 < 40`);
     if (pool.given.length < 120) err(`${P} given ${pool.given.length}개 < 120`);
@@ -228,6 +246,13 @@ rmSync(tmp, { recursive: true, force: true });
 
 console.log('\n스타일      남   여   공용  성(가문)   검사 조합   차단');
 for (const r of table) console.log(`${r.style.padEnd(10)} ${String(r.m).padStart(4)} ${String(r.f).padStart(4)} ${String(r.u).padStart(5)} ${String(r.surnames).padStart(8)} ${String(r.combos).padStart(11)} ${String(r.blocked).padStart(6)}`);
+console.log('\n분위기 태그   현대/고전  부드러운/강한  평범/화려');
+for (const [k, c] of Object.entries(moodCount)) {
+  const pct = (a, b) => `${Math.round((100 * a) / (a + b || 1))}/${Math.round((100 * b) / (a + b || 1))}%`;
+  console.log(`${k.padEnd(12)} ${pct(c.m, c.c).padStart(9)} ${pct(c.s, c.h).padStart(13)} ${pct(c.p, c.f).padStart(10)}`);
+  // A side with almost nothing would make that 분위기 choice useless for the style.
+  for (const [a, b, label] of [['m', 'c', '시대감'], ['s', 'h', '느낌'], ['p', 'f', '개성']]) if (Math.min(c[a], c[b]) < 0.1 * c.total) warnings.push(`${k} ${label} 한쪽이 10% 미만 (${c[a]}/${c[b]})`);
+}
 for (const w of warnings) console.log(`경고: ${w}`);
 if (errors.length) {
   console.error(`\n오류 ${errors.length}건:`);

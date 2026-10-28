@@ -1,9 +1,9 @@
 // NAME ATELIER main screen: pickers, three name cards, the big 「다시 뽑기 ✨」 button and the footer menu.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Genre } from '../data/types';
-import { GENDERS, GENRES, NO_CONDITIONS, REGIONS, STYLE_OPTIONS, generate, hasConditions, label, parseNameList, regionOf, type GenderSel, type NameConditions, type NameResult, type Region, type StyleId, type SurnamePart } from '../engine/generate';
+import { GENDERS, GENRES, MOOD_LABEL, NO_CONDITIONS, REGIONS, STYLE_OPTIONS, generate, hasConditions, label, nameParts, parseNameList, regionOf, type GenderSel, type NameConditions, type NameResult, type Region, type StyleId, type SurnamePart } from '../engine/generate';
 import { copyLabel, toClipboardText, toCsv, toTxt } from '../engine/exporting';
-import { DEFAULT_SETTINGS, type AtelierApi, type Favorite, type SaveResult, type Settings, type ThemePref } from '../shared/types';
+import { DEFAULT_SETTINGS, MAX_FAVORITES, type AtelierApi, type Favorite, type SaveResult, type Settings, type ThemePref, type WorkSettings } from '../shared/types';
 import { hasAsset, onAssets } from './assets';
 import { IconClose, IconCopy, IconExport, IconFilter, IconGear, IconImage, IconInfo, IconLock, IconStar, IconTrash } from './icons';
 import { renderShareImage, type ShareCard } from './shareImage';
@@ -26,7 +26,20 @@ const today = () => new Date().toISOString().slice(0, 10);
 /** The small line under the original spelling: 한자 뜻 for 선협·무협, nicknames for western names. */
 const extraLine = (n: { meaning?: string; nick?: string[] }) => n.meaning ?? (n.nick?.length ? `애칭 ${n.nick.join(' · ')}` : '');
 const condSummary = (c: NameConditions) =>
-  [c.len !== 'any' && `${c.len === '4+' ? '4자 이상' : `${c.len}자`}`, c.first && `‘${c.first}’ 시작`, c.final === 'yes' && '받침 있음', c.final === 'no' && '받침 없음'].filter(Boolean).join(' · ');
+  [
+    c.era !== 'any' && MOOD_LABEL.era[c.era],
+    c.tone !== 'any' && MOOD_LABEL.tone[c.tone],
+    c.flair !== 'any' && MOOD_LABEL.flair[c.flair],
+    c.len !== 'any' && `${c.len === '4+' ? '4자 이상' : `${c.len}자`}`,
+    c.first && `‘${c.first}’ 시작`,
+    c.final === 'yes' && '받침 있음',
+    c.final === 'no' && '받침 없음',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+const WORK_DEFAULT_LABEL = '기본 (작품 없음)';
+const MAX_UNDO = 30;
+const MAX_RECENT = 90;
 const metaOf = (n: { genre: Genre; style: StyleId; gender: GenderSel }) => `${label.genre(n.genre)} · ${label.style(n.style)} · ${label.gender(n.gender)}`;
 // Keep 폰/드 on the same line as the surname when a long name wraps (고트프리트 / 폰 바우만).
 const keepParticle = (ko: string) => ko.replace(/(^| )(폰|드) /g, (_m, lead: string, p: string) => `${lead}${p} `);
@@ -67,7 +80,10 @@ export function App() {
   };
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; warn?: boolean } | null>(null);
-  const [panel, setPanel] = useState<null | 'favorites' | 'export' | 'settings' | 'about' | 'cond' | 'avoid'>(null);
+  const [panel, setPanel] = useState<null | 'favorites' | 'export' | 'settings' | 'about' | 'cond' | 'avoid' | 'recent' | 'work' | 'help'>(null);
+  const [undoStack, setUndoStack] = useState<(NameResult | null)[][]>([]); // previous card sets this session (최근 뽑기 되돌리기)
+  const [recent, setRecent] = useState<NameResult[]>([]); // every name shown this session, newest first
+  const [newWork, setNewWork] = useState('');
   const [fixedSurname, setFixedSurname] = useState<SurnamePart | null>(null); // 성 고정 (this session only)
   const [favQuery, setFavQuery] = useState('');
   const [favWork, setFavWork] = useState<string>('__all');
@@ -149,7 +165,41 @@ export function App() {
       flash(`‘${n.surname.ko}’ 성으로 고정했습니다 · 다시 뽑으면 이름만 바뀝니다`);
     }
   };
-  const avoidNames = parseNameList(settings.avoidText);
+  // 피할 이름 = the pasted list + names marked 확정 in the current 작업 공간's favourites.
+  const confirmedNames = favorites.filter((f) => f.confirmed && (f.work ?? '') === settings.work).map((f) => f.ko);
+  const avoidNames = [...new Set([...parseNameList(settings.avoidText), ...confirmedNames])];
+
+  // 작품별 작업 공간: each work keeps its own pickers, conditions and 피할 이름.
+  const workOf = (s: Settings): WorkSettings => ({ last: s.last, regionStyle: s.regionStyle, cond: s.cond, avoidText: s.avoidText });
+  const switchWork = (name: string) => {
+    if (name === settings.work) return;
+    const workspaces = { ...settings.workspaces };
+    if (settings.work) workspaces[settings.work] = workOf(settings);
+    else workspaces[''] = workOf(settings);
+    const target = workspaces[name] ?? workOf(settings); // a new work starts from the current choices
+    if (name) workspaces[name] = target;
+    setFixedSurname(null);
+    setNote(null);
+    history.current.clear();
+    setFavWork(name || '__all');
+    updateSettings({ ...target, work: name, workspaces });
+    flash(name ? `‘${name}’ 작업 공간으로 바꿨습니다` : '기본 작업 공간으로 바꿨습니다');
+  };
+  const addWork = (raw: string) => {
+    const name = raw.trim().slice(0, 60);
+    if (!name || name === WORK_DEFAULT_LABEL) return;
+    setNewWork('');
+    switchWork(name);
+  };
+  const deleteWork = (name: string) => {
+    const workspaces = { ...settings.workspaces };
+    delete workspaces[name];
+    const base = workspaces[''] ?? workOf(settings);
+    updateSettings({ ...base, work: '', workspaces });
+    setFavWork('__all');
+    flash(`‘${name}’ 작업 공간을 지웠습니다 (즐겨찾기의 작품 표시는 그대로 남습니다)`);
+  };
+  const workNames = [...new Set([...Object.keys(settings.workspaces).filter(Boolean), ...favorites.map((f) => f.work).filter((w): w is string => !!w)])].sort((a, b) => a.localeCompare(b, 'ko'));
   // Switching group returns to the style last used in that group (or its first style).
   const pickRegion = (r: Region) => r !== region && pickStyle(settings.regionStyle[r] ?? REGIONS.find((x) => x.id === r)!.styles[0]);
 
@@ -162,6 +212,12 @@ export function App() {
       persistFavorites(favorites.filter((f) => f.id !== n.id));
       flash('즐겨찾기에서 뺐습니다');
     } else {
+      if (favorites.length >= MAX_FAVORITES) {
+        flash(`즐겨찾기는 ${MAX_FAVORITES.toLocaleString()}개까지 담을 수 있습니다. 쓰지 않는 이름을 지운 뒤 다시 담아 주세요`);
+        return;
+      }
+      // New favourites go to the current 작업 공간's work (or the work being viewed in the drawer).
+      const work = settings.work || (favWork !== '__all' && favWork !== '__none' ? favWork : '');
       persistFavorites([
         {
           id: n.id,
@@ -174,11 +230,11 @@ export function App() {
           savedAt: new Date().toISOString(),
           ...(n.meaning ? { meaning: n.meaning } : {}),
           ...(n.nick ? { nick: n.nick } : {}),
-          ...(favWork !== '__all' && favWork !== '__none' ? { work: favWork } : {}),
+          ...(work ? { work } : {}),
         },
         ...favorites,
       ]);
-      flash('즐겨찾기에 담았습니다 · 다시 뽑아도 남아요');
+      flash(settings.keepFavorites ? '즐겨찾기에 담았습니다 · 다시 뽑아도 남아요' : '즐겨찾기에 담았습니다');
     }
   };
 
@@ -189,8 +245,8 @@ export function App() {
 
   const draw = useCallback(() => {
     if (busy) return;
-    // Favourited cards stay put; if all three are kept, draw a fresh three (they remain in 즐겨찾기).
-    const kept = slots.map((s) => (s && favIds.has(s.id) ? s : null));
+    // Favourited cards stay put (설정에서 끌 수 있음); if all three are kept, draw a fresh three (they remain in 즐겨찾기).
+    const kept = slots.map((s) => (s && settings.keepFavorites && favIds.has(s.id) ? s : null));
     const targets = kept.every(Boolean) ? [0, 1, 2] : [0, 1, 2].filter((i) => !kept[i]);
     const onScreen = slots.filter((s): s is NameResult => !!s).map((s) => s.id);
     const res = generate({ genre, style, gender, count: targets.length, avoid: history.current, exclude: onScreen, cond: settings.cond, avoidNames, fixedSurname: fixedSurname ?? undefined });
@@ -202,6 +258,9 @@ export function App() {
     }
     setNote(res.repeated ? { text: '이 조합의 이름 후보를 거의 다 봤어요. 앞에서 나온 이름이 다시 나올 수 있습니다.', warn: true } : null);
     const assign = targets.slice(0, res.names.length).map((slot, k) => ({ slot, name: res.names[k] }));
+    // Remember what was on screen so 「이전 뽑기」 can bring it back, and log every new name for 「최근 본 이름」.
+    if (slots.some(Boolean)) setUndoStack((u) => [...u, slots].slice(-MAX_UNDO));
+    setRecent((r) => [...res.names, ...r.filter((x) => !res.names.some((n) => n.id === x.id))].slice(0, MAX_RECENT));
 
     if (!animate) {
       setSlots((prev) => {
@@ -231,7 +290,18 @@ export function App() {
       }, k * STAGGER_MS);
     });
     window.setTimeout(() => setBusy(false), assign.length * STAGGER_MS + FLIP_MS * 2 + 40);
-  }, [busy, slots, favorites, genre, style, gender, animate, settings.cond, settings.avoidText, fixedSurname]);
+  }, [busy, slots, favorites, genre, style, gender, animate, settings.cond, settings.avoidText, settings.keepFavorites, settings.work, fixedSurname]);
+
+  /** 최근 뽑기 되돌리기: puts the previous three cards back (the current ones stay in 「최근 본 이름」). */
+  const undoDraw = () => {
+    if (busy || !undoStack.length) return;
+    const prev = undoStack[undoStack.length - 1];
+    setUndoStack((u) => u.slice(0, -1));
+    setSlots(prev);
+    prev.forEach((n, i) => n && setRotAt(i, Math.ceil(rotRef.current[i] / 360) * 360));
+    setNote(null);
+    flash('이전 뽑기로 돌아갔습니다');
+  };
 
   const saveImage = async (names: NameResult[]) => {
     if (!names.length || imaging) return;
@@ -258,20 +328,28 @@ export function App() {
       const t = e.target as HTMLElement;
       const onControl = t && (t.tagName === 'BUTTON' || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
       // e.code works whatever the keyboard layout (ㄱ in 한글 mode); holding the key must not burn through names.
+      const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+      if (typing) return;
       if (e.code === 'KeyR' || (e.key === ' ' && !onControl)) {
         e.preventDefault();
         if (!e.repeat) draw();
+      } else if (e.code === 'KeyZ' && !e.repeat) {
+        e.preventDefault();
+        undoDraw();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [draw, panel]);
+  }, [draw, panel, undoStack, busy]);
 
-  const exportFavorites = async (kind: 'txt' | 'csv') => {
+  /** Saves either every favourite (footer menu) or just the list the drawer is showing (search / 작품 filter). */
+  const exportFavorites = async (kind: 'txt' | 'csv', list: Favorite[] = favorites, scope = '전체') => {
     setPanel(null);
-    const content = kind === 'csv' ? toCsv(favorites) : toTxt(favorites, '즐겨찾기한 이름');
-    const r = await api().exportFile(kind, content, `NAME_ATELIER_즐겨찾기_${today()}.${kind}`);
-    if (r.saved) flash(`${kind.toUpperCase()}로 저장했습니다`);
+    const title = scope === '전체' ? '즐겨찾기한 이름' : `즐겨찾기한 이름 — ${scope}`;
+    const content = kind === 'csv' ? toCsv(list) : toTxt(list, title);
+    const tag = scope === '전체' ? '' : `_${scope.replace(/[\\/:*?"<>|\s]+/g, '_')}`;
+    const r = await api().exportFile(kind, content, `NAME_ATELIER_즐겨찾기${tag}_${today()}.${kind}`);
+    if (r.saved) flash(`${scope === '전체' ? '즐겨찾기 전체' : `현재 목록(${scope})`} ${list.length}개를 ${kind.toUpperCase()}로 저장했습니다`);
     else if (r.error) flash(`저장하지 못했습니다 (${r.error}). 파일이 다른 프로그램에서 열려 있는지 확인해 주세요`);
   };
   const current = slots.filter((s): s is NameResult => !!s);
@@ -282,12 +360,15 @@ export function App() {
       (favWork === '__all' || (favWork === '__none' ? !f.work : f.work === favWork)) &&
       (!q || [f.ko, f.orig, f.memo, f.work, f.meaning, ...(f.nick ?? [])].some((v) => v && v.toLowerCase().includes(q))),
   );
-  const updateFavorite = (id: string, patch: Partial<Pick<Favorite, 'memo' | 'work'>>) => {
+  const filtered = favWork !== '__all' || !!q;
+  const scopeLabel = filtered ? [favWork === '__none' ? '미분류' : favWork !== '__all' ? favWork : '', q && `검색 ${favQuery.trim()}`].filter(Boolean).join(' · ') : '전체';
+  const updateFavorite = (id: string, patch: Partial<Pick<Favorite, 'memo' | 'work' | 'confirmed'>>) => {
     const next = favorites.map((f) => {
       if (f.id !== id) return f;
       const merged: Favorite = { ...f, ...patch };
       if (!merged.memo) delete merged.memo;
       if (!merged.work) delete merged.work;
+      if (!merged.confirmed) delete merged.confirmed;
       return merged;
     });
     if (JSON.stringify(next) !== JSON.stringify(favorites)) persistFavorites(next);
@@ -310,6 +391,28 @@ export function App() {
           <b>작명 아틀리에</b>
           <span>웹소설 캐릭터 이름 공방 · 인터넷 없이 작동</span>
         </div>
+        <span className="spacer" />
+        {/* 작품별 작업 공간: pickers, 조건 and 피할 이름 are remembered per work. */}
+        <label className="work-pick" title="작품마다 스타일·조건·피할 이름을 따로 기억합니다">
+          <span>작품</span>
+          <select
+            className="text-in"
+            value={settings.work}
+            onChange={(e) => (e.target.value === '__new' ? setPanel('work') : switchWork(e.target.value))}
+            aria-label="작업 공간(작품)"
+          >
+            <option value="">{WORK_DEFAULT_LABEL}</option>
+            {workNames.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+            <option value="__new">＋ 새 작품 / 관리…</option>
+          </select>
+        </label>
+        <button className="icon-btn help-btn" title="사용법" aria-label="사용법" onClick={() => setPanel('help')}>
+          ?
+        </button>
       </header>
 
       <section className="pickers" aria-label="이름 조건">
@@ -373,7 +476,7 @@ export function App() {
               <div className="face front" aria-hidden={rot[i] % 360 !== 0}>
                 {n && (
                   <>
-                    {favIds.has(n.id) && <span className="kept">보관됨</span>}
+                    {favIds.has(n.id) && settings.keepFavorites && <span className="kept">보관됨</span>}
                     <div className="crest" aria-hidden>
                       {hasAsset('crest') ? (
                         <img src="design/card_crest.png" alt="" />
@@ -442,10 +545,31 @@ export function App() {
 
       <div className="draw-row">
         {/* aria-disabled, not disabled: a disabled button drops keyboard focus to <body> mid-animation. */}
-        <button className="draw" onClick={draw} aria-disabled={busy} aria-keyshortcuts="R">
-          {drawn ? '다시 뽑기 ✨' : '이름 뽑기 ✨'}
-        </button>
-        {fixedSurname && !note ? (
+        <div className="draw-line">
+          <button className="side-btn" onClick={undoDraw} disabled={!undoStack.length || busy} title="이전 뽑기로 되돌리기 (Z)" aria-keyshortcuts="Z">
+            ↶ 이전
+          </button>
+          <button className="draw" onClick={draw} aria-disabled={busy} aria-keyshortcuts="R">
+            {drawn ? '다시 뽑기 ✨' : '이름 뽑기 ✨'}
+          </button>
+          <button className="side-btn" onClick={() => setPanel('recent')} disabled={!recent.length} title="이번 실행에서 본 이름 전체">
+            최근 {recent.length || ''}
+          </button>
+        </div>
+        {/* One line under the button: a warning, the 성 고정 state, the first-run button guide, or the shortcut hint. */}
+        {note?.warn ? (
+          <div className="draw-note warn">{note.text}</div>
+        ) : drawn && !settings.tipsSeen ? (
+          <div className="draw-note tip-bar" role="note">
+            카드 아래 버튼: <b>복사</b> · <b>이미지 저장</b>(SNS용) · <b>🔒 성 고정</b>(이름만 다시 뽑기) · <b>☆ 즐겨찾기</b>
+            <button className="link-btn" onClick={() => setPanel('help')}>
+              사용법
+            </button>
+            <button className="link-btn" onClick={() => updateSettings({ tipsSeen: true })}>
+              닫기
+            </button>
+          </div>
+        ) : fixedSurname && !note ? (
           <div className="draw-note lock-note">
             <IconLock /> 성 고정: <b>{fixedSurname.ko}</b>
             <button className="link-btn" onClick={() => setFixedSurname(null)}>
@@ -453,7 +577,9 @@ export function App() {
             </button>
           </div>
         ) : (
-          <div className={`draw-note${note?.warn ? ' warn' : ''}`}>{note?.text ?? (drawn ? '★ 즐겨찾기한 카드는 다시 뽑아도 남아요 · 🔒 성 고정 · 단축키 R' : `한 번에 ${SLOTS}개씩 뽑습니다 · 단축키 R`)}</div>
+          <div className={`draw-note${note?.warn ? ' warn' : ''}`}>
+            {note?.text ?? (drawn ? `${settings.keepFavorites ? '★ 즐겨찾기한 카드는 다시 뽑아도 남아요 · ' : ''}다시 뽑기 R · 되돌리기 Z` : `한 번에 ${SLOTS}개씩 뽑습니다 · 단축키 R`)}
+          </div>
         )}
       </div>
 
@@ -467,10 +593,10 @@ export function App() {
         {panel === 'export' && (
           <div className="menu" style={{ left: 110 }} role="menu">
             <button role="menuitem" disabled={!favorites.length} onClick={() => exportFavorites('txt')}>
-              즐겨찾기 TXT로 저장
+              즐겨찾기 전체 TXT로 저장
             </button>
             <button role="menuitem" disabled={!favorites.length} onClick={() => exportFavorites('csv')}>
-              즐겨찾기 CSV로 저장 (엑셀)
+              즐겨찾기 전체 CSV로 저장 (엑셀)
             </button>
             <button role="menuitem" disabled={!favorites.length} onClick={() => (setPanel(null), copy(toClipboardText(favorites), `즐겨찾기 ${favorites.length}개를 복사했습니다`))}>
               즐겨찾기 전체 복사
@@ -500,20 +626,12 @@ export function App() {
           <div className="scrim" onClick={() => setPanel(null)} />
           <aside className="drawer" role="dialog" aria-modal="true" aria-label="즐겨찾기">
             <div className="drawer-head">
-              <h2>즐겨찾기 {favorites.length}</h2>
+              <h2>
+                즐겨찾기 {favorites.length}
+                {favorites.length >= MAX_FAVORITES * 0.9 && <span className="cap"> / {MAX_FAVORITES.toLocaleString()}</span>}
+              </h2>
               <button className="icon-btn" aria-label="닫기" autoFocus onClick={() => setPanel(null)}>
                 <IconClose />
-              </button>
-            </div>
-            <div className="drawer-tools">
-              <button className="small-btn" disabled={!favorites.length} onClick={() => exportFavorites('txt')}>
-                TXT 저장
-              </button>
-              <button className="small-btn" disabled={!favorites.length} onClick={() => exportFavorites('csv')}>
-                CSV 저장
-              </button>
-              <button className="small-btn" disabled={!favorites.length} onClick={() => copy(toClipboardText(favorites), `즐겨찾기 ${favorites.length}개를 복사했습니다`)}>
-                전체 복사
               </button>
             </div>
             {favorites.length > 0 && (
@@ -528,6 +646,20 @@ export function App() {
                   ))}
                   <option value="__none">미분류</option>
                 </select>
+              </div>
+            )}
+            {favorites.length > 0 && (
+              <div className="drawer-tools">
+                <span className="scope">{filtered ? `현재 목록 ${shownFavorites.length}개` : `전체 ${favorites.length}개`}</span>
+                <button className="small-btn" disabled={!shownFavorites.length} onClick={() => exportFavorites('txt', shownFavorites, scopeLabel)}>
+                  TXT 저장
+                </button>
+                <button className="small-btn" disabled={!shownFavorites.length} onClick={() => exportFavorites('csv', shownFavorites, scopeLabel)}>
+                  CSV 저장
+                </button>
+                <button className="small-btn" disabled={!shownFavorites.length} onClick={() => copy(toClipboardText(shownFavorites), `${filtered ? '현재 목록' : '즐겨찾기 전체'} ${shownFavorites.length}개를 복사했습니다`)}>
+                  복사
+                </button>
               </div>
             )}
             <datalist id="work-list">
@@ -550,7 +682,7 @@ export function App() {
                     <div className="fav-row">
                       <div className="fav-main">
                         <div className="fav-name">
-                          {f.ko} {f.work && <span className="work-tag">{f.work}</span>}
+                          {f.ko} {f.work && <span className="work-tag">{f.work}</span>} {f.confirmed && <span className="work-tag confirmed">확정</span>}
                         </div>
                         {f.orig && <div className="fav-orig">{f.orig}</div>}
                         {extraLine(f) && <div className="fav-orig">{extraLine(f)}</div>}
@@ -575,6 +707,10 @@ export function App() {
                           작품
                           <input className="text-in" list="work-list" maxLength={60} placeholder="예: 천명수선기 (비우면 미분류)" defaultValue={f.work ?? ''} onBlur={(e) => updateFavorite(f.id, { work: e.target.value.trim() })} />
                         </label>
+                        <label className="check">
+                          <input type="checkbox" checked={!!f.confirmed} onChange={(e) => updateFavorite(f.id, { confirmed: e.target.checked })} />
+                          확정 — 작품에 이미 쓴 이름. 이 작품 작업 공간에서 비슷한 이름을 뽑지 않습니다
+                        </label>
                         <label>
                           메모
                           <textarea className="text-in" rows={3} maxLength={2000} placeholder="어떤 인물에게 붙일지, 이름을 고른 이유…" defaultValue={f.memo ?? ''} onBlur={(e) => updateFavorite(f.id, { memo: e.target.value })} />
@@ -594,7 +730,28 @@ export function App() {
           <div className="scrim" onClick={() => setPanel(null)} />
           <div className="dialog" role="dialog" aria-modal="true" aria-label="조건 뽑기">
             <h2>조건 뽑기</h2>
-            <p>이름(성 제외) 부분에 적용합니다. 외국 이름은 한글 표기 기준입니다.</p>
+            <p>분위기는 이름마다 검수한 태그로 고릅니다(창작 판타지식은 ‘느낌’만 소리로 판단). 글자 조건은 이름(성 제외) 부분의 한글 표기에 적용합니다.</p>
+            {(
+              [
+                ['era', '시대감', [['m', '현대적'], ['c', '고전적']]],
+                ['tone', '느낌', [['s', '부드러운'], ['h', '강한']]],
+                ['flair', '개성', [['p', '평범한'], ['f', '화려한']]],
+              ] as const
+            ).map(([axis, title, opts]) => (
+              <div className="row" key={axis}>
+                <span>{title}</span>
+                <span className="seg" role="radiogroup" aria-label={title}>
+                  <button role="radio" aria-checked={settings.cond[axis] === 'any'} onClick={() => setCond({ [axis]: 'any' } as Partial<NameConditions>)}>
+                    상관없음
+                  </button>
+                  {opts.map(([id, t]) => (
+                    <button key={id} role="radio" aria-checked={settings.cond[axis] === id} onClick={() => setCond({ [axis]: id } as Partial<NameConditions>)}>
+                      {t}
+                    </button>
+                  ))}
+                </span>
+              </div>
+            ))}
             <div className="row">
               <span>글자 수</span>
               <span className="seg" role="radiogroup" aria-label="글자 수">
@@ -655,7 +812,22 @@ export function App() {
             <h2>이미 쓴 이름 피하기</h2>
             <p>작품 등장인물 이름을 붙여 넣으세요. 쉼표나 줄바꿈으로 나눕니다. 같은 이름, 같은 이름자(예: ‘유연서’가 있으면 ‘김연서’), 성만 붙은 이름은 뽑지 않습니다.</p>
             <textarea className="text-in" rows={8} value={avoidDraft} placeholder={'예)\n유연서, 이서희, 은휘겸\n레티시아 로젠베르크'} autoFocus onChange={(e) => setAvoidDraft(e.target.value)} aria-label="피할 이름 목록" />
-            <p className="hint-text">{parseNameList(avoidDraft).length}개 인식 · 이 컴퓨터에만 저장됩니다</p>
+            <p className="hint-text">
+              {parseNameList(avoidDraft).length}개 인식 · 띄어 쓴 이름은 각 부분을 따로 비교합니다(서양식·일본식) · 이 컴퓨터에만 저장됩니다
+              {settings.work ? ` · ‘${settings.work}’ 작업 공간 전용` : ''}
+            </p>
+            {parseNameList(avoidDraft).length > 0 && (
+              <div className="parsed">
+                {parseNameList(avoidDraft)
+                  .slice(0, 60)
+                  .map((a) => (
+                    <span className="work-tag" key={a}>
+                      {nameParts(a).join(' · ')}
+                    </span>
+                  ))}
+              </div>
+            )}
+            {confirmedNames.length > 0 && <p className="hint-text">즐겨찾기에서 ‘확정’한 이름 {confirmedNames.length}개도 함께 피합니다: {confirmedNames.slice(0, 8).join(', ')}{confirmedNames.length > 8 ? ' …' : ''}</p>}
             <div className="dialog-actions">
               <button className="small-btn" onClick={() => setAvoidDraft('')}>
                 모두 지우기
@@ -670,6 +842,143 @@ export function App() {
                 }}
               >
                 적용
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {panel === 'recent' && (
+        <>
+          <div className="scrim" onClick={() => setPanel(null)} />
+          <aside className="drawer" role="dialog" aria-modal="true" aria-label="최근 본 이름">
+            <div className="drawer-head">
+              <h2>최근 본 이름 {recent.length}</h2>
+              <button className="icon-btn" aria-label="닫기" autoFocus onClick={() => setPanel(null)}>
+                <IconClose />
+              </button>
+            </div>
+            <p className="drawer-note">이번 실행에서 뽑은 이름입니다(최근 {MAX_RECENT}개, 프로그램을 끄면 사라집니다). 마음에 드는 이름은 ☆로 담으세요.</p>
+            <ul className="fav-list">
+              {recent.map((n) => (
+                <li className="fav" key={n.id}>
+                  <div className="fav-row">
+                    <div className="fav-main">
+                      <div className="fav-name">{n.ko}</div>
+                      {n.orig && <div className="fav-orig">{n.orig}</div>}
+                      <div className="fav-meta">{metaOf(n)}</div>
+                    </div>
+                    <button className="icon-btn" title="복사" aria-label={`${n.ko} 복사`} onClick={() => copy(copyLabel(n))}>
+                      <IconCopy />
+                    </button>
+                    <button className={`icon-btn${favIds.has(n.id) ? ' on' : ''}`} title="즐겨찾기" aria-pressed={favIds.has(n.id)} aria-label={`${n.ko} 즐겨찾기`} onClick={() => toggleFavorite(n)}>
+                      <IconStar filled={favIds.has(n.id)} />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        </>
+      )}
+
+      {panel === 'work' && (
+        <>
+          <div className="scrim" onClick={() => setPanel(null)} />
+          <div className="dialog" role="dialog" aria-modal="true" aria-label="작품 작업 공간">
+            <h2>작품별 작업 공간</h2>
+            <p>작품마다 장르·이름 스타일·성별·조건 뽑기·피할 이름을 따로 기억합니다. 작품을 바꾸면 그 작품의 설정으로 돌아가고, 새로 담는 즐겨찾기는 그 작품으로 분류됩니다. 즐겨찾기에서 ‘확정’ 표시한 이름은 그 작품에서 자동으로 피할 이름이 됩니다.</p>
+            <form
+              className="row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                addWork(newWork);
+                setPanel(null);
+              }}
+            >
+              <input className="text-in" maxLength={60} placeholder="새 작품 이름 (예: 천명수선기)" value={newWork} autoFocus onChange={(e) => setNewWork(e.target.value)} aria-label="새 작품 이름" />
+              <button className="small-btn primary" type="submit" disabled={!newWork.trim()}>
+                만들고 전환
+              </button>
+            </form>
+            {Object.keys(settings.workspaces).filter(Boolean).length > 0 && (
+              <ul className="work-list">
+                {Object.keys(settings.workspaces)
+                  .filter(Boolean)
+                  .sort((a, b) => a.localeCompare(b, 'ko'))
+                  .map((w) => (
+                    <li key={w} className="row">
+                      <span>
+                        {w}
+                        {w === settings.work && <span className="work-tag">사용 중</span>}
+                        <span className="hint-text"> · 즐겨찾기 {favorites.filter((f) => f.work === w).length}개</span>
+                      </span>
+                      <span className="actions">
+                        {w !== settings.work && (
+                          <button
+                            className="small-btn"
+                            onClick={() => {
+                              switchWork(w);
+                              setPanel(null);
+                            }}
+                          >
+                            전환
+                          </button>
+                        )}
+                        <button className="small-btn danger" onClick={() => deleteWork(w)}>
+                          작업 공간 지우기
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            )}
+            <div className="dialog-actions">
+              <button className="small-btn" onClick={() => setPanel(null)}>
+                닫기
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {panel === 'help' && (
+        <>
+          <div className="scrim" onClick={() => setPanel(null)} />
+          <div className="dialog" role="dialog" aria-modal="true" aria-label="사용법">
+            <h2>사용법</h2>
+            <ul>
+              <li>
+                <b>뽑기</b>: 장르 · 이름 스타일(한국/동양풍/서양풍) · 성별을 고르고 「이름 뽑기 ✨」. 한 번에 세 장, 다시 누르면 새 세 장.
+              </li>
+              <li>
+                <b>카드 버튼</b>(왼쪽부터): 복사 · 이미지 저장(SNS용 PNG) · 🔒 성 고정(성은 두고 이름만 다시 뽑기) · ☆ 즐겨찾기.
+              </li>
+              <li>
+                <b>↶ 이전</b>: 방금 넘긴 세 장으로 되돌아갑니다(단축키 Z). <b>최근</b>: 이번 실행에서 본 이름 전체.
+              </li>
+              <li>
+                <b>조건 뽑기</b>: 분위기(현대적/고전적 · 부드러운/강한 · 평범한/화려한)와 글자 수 · 첫 글자 · 받침.
+              </li>
+              <li>
+                <b>피할 이름</b>: 작품에 이미 나온 이름을 붙여 넣으면 같은 이름이나 같은 이름자를 피합니다.
+              </li>
+              <li>
+                <b>작품</b>(오른쪽 위): 작품마다 설정과 피할 이름을 따로 기억합니다. 즐겨찾기에서 ‘확정’한 이름은 자동으로 피합니다.
+              </li>
+              <li>
+                <b>단축키</b>: R 다시 뽑기 · Z 되돌리기 · Esc 열린 창 닫기.
+              </li>
+            </ul>
+            <div className="dialog-actions">
+              <button
+                className="small-btn"
+                onClick={() => {
+                  updateSettings({ tipsSeen: true });
+                  setPanel(null);
+                }}
+              >
+                닫기
               </button>
             </div>
           </div>
@@ -725,6 +1034,32 @@ export function App() {
                 }}
               >
                 기록 비우기
+              </button>
+            </div>
+            <div className="row">
+              <span>
+                즐겨찾기한 카드 자리 유지
+                <div className="hint-text">켜면 ☆한 카드는 다시 뽑아도 그대로 남습니다. 끄면 즐겨찾기는 보관만 하고 세 장 모두 새로 뽑습니다</div>
+              </span>
+              <span className="seg" role="radiogroup" aria-label="즐겨찾기한 카드 자리 유지">
+                <button role="radio" aria-checked={settings.keepFavorites} onClick={() => updateSettings({ keepFavorites: true })}>
+                  켜기
+                </button>
+                <button role="radio" aria-checked={!settings.keepFavorites} onClick={() => updateSettings({ keepFavorites: false })}>
+                  끄기
+                </button>
+              </span>
+            </div>
+            <div className="row">
+              <span>카드 버튼 안내</span>
+              <button
+                className="small-btn"
+                onClick={() => {
+                  updateSettings({ tipsSeen: false });
+                  setPanel('help');
+                }}
+              >
+                사용법 다시 보기
               </button>
             </div>
             <div className="dialog-actions">
