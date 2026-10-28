@@ -1,5 +1,6 @@
 // Admin key generator tests on the real app (monitor 2). Uses isolated, throwaway keygen homes and an export
 // folder in the OS temp dir — never the real admin data folder or the production signing key.
+import { createRequire } from 'node:module';
 import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,7 +10,8 @@ import { loadLicenseLib } from './helpers/testLicense.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 execSync('node scripts/build-admin.mjs', { cwd: root, stdio: 'ignore' });
-const electron = join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
+// The electron package exports the path of its binary (electron.exe, or Electron.app/… on macOS).
+const electron = createRequire(import.meta.url)('electron');
 const L = await loadLicenseLib();
 const shots = join(root, 'test-output', 'keygen-e2e');
 mkdirSync(shots, { recursive: true });
@@ -74,7 +76,7 @@ const txtLines = txt ? readFileSync(join(exportDir, txt), 'utf8').trim().split(/
 const csvLines = csv ? readFileSync(join(exportDir, csv), 'utf8').replace(/^﻿/, '').trim().split(/\r?\n/) : [];
 checks['TXT: 100 keys, same as list'] = txtLines.length === 100 && txtLines.every((k, i) => k === keys[i]);
 checks['CSV: header + 100 rows with IDs'] = csvLines[0] === '번호,키 ID,인증키,생성일' && csvLines.length === 101 && csvLines.slice(1).every((l, i) => l.split(',')[1] === ids[i] && l.split(',')[2] === keys[i]);
-const clip = execSync('powershell -NoProfile -Command "Get-Clipboard"', { encoding: 'utf8' }).trim().split(/\r?\n/);
+const clip = execSync(process.platform === 'win32' ? 'powershell -NoProfile -Command "Get-Clipboard"' : 'pbpaste', { encoding: 'utf8' }).trim().split(/\r?\n/);
 checks['copy: clipboard holds the 100 keys'] = clip.length === 100 && clip[0] === keys[0] && clip[99] === keys[99];
 checks['backup file written'] = !!pem && readFileSync(join(exportDir, pem), 'utf8').includes('BEGIN PRIVATE KEY');
 

@@ -40,10 +40,14 @@ const adminSecretB64 = adminStored?.privateKey && adminStored.privateKey.length 
 if (!packaged) {
   walk(join(root, 'dist'), (p) => /\.(js|html|json)$/.test(p) && scanText(p.slice(root.length + 1), readFileSync(p, 'utf8')));
 } else {
-  const unpacked = join(root, 'release', 'win-unpacked');
-  const asarPath = join(unpacked, 'resources', 'app.asar');
-  if (!existsSync(asarPath)) problems.push('release/win-unpacked/resources/app.asar not found');
-  else {
+  // Windows: release/win-unpacked/resources/app.asar · macOS: release/mac*/NAME ATELIER.app/Contents/Resources/app.asar
+  const candidates = [join(root, 'release', 'win-unpacked', 'resources', 'app.asar')];
+  if (existsSync(join(root, 'release')))
+    for (const d of readdirSync(join(root, 'release'))) if (d.startsWith('mac')) candidates.push(join(root, 'release', d, 'NAME ATELIER.app', 'Contents', 'Resources', 'app.asar'));
+  const asars = candidates.filter((p) => existsSync(p));
+  if (!asars.length) problems.push('no packaged app.asar found under release/');
+  for (const asarPath of asars) {
+    console.log(`checking ${asarPath.slice(root.length + 1)}`);
     const asar = createRequire(import.meta.url)('@electron/asar');
     // listPackage returns native paths (\dist\main.js on Windows); extractFile wants them without the leading separator.
     const files = asar.listPackage(asarPath);

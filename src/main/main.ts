@@ -178,12 +178,13 @@ function createWindow() {
   let pos: { x: number; y: number } | undefined;
   if (wantsSecondDisplay) {
     const p = secondDisplayBounds(960, 680);
-    if (!p) {
+    // CI build machines (GitHub Actions sets CI=true) have one screen and nobody working on it, so tests may use it.
+    if (!p && !process.env.CI) {
       console.error('NAME ATELIER: 모니터 2를 찾지 못해 시험 실행을 중단합니다.');
       app.exit(3);
       return;
     }
-    pos = p;
+    pos = p ?? undefined;
   }
   const win = new BrowserWindow({
     ...(pos ?? {}),

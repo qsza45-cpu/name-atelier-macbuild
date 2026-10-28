@@ -1,5 +1,6 @@
 // Screen smoke test: builds, launches the real app on monitor 2 (NAME_ATELIER_SHOT run) with a temporary store,
 // drives it with tests/e2e-smoke.js and checks the result. Exits 1 on failure; skips (exit 3) without a second monitor.
+import { createRequire } from 'node:module';
 import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,7 +15,8 @@ const shot = join(home, 'shot.png');
 // The app is licensed with a throwaway test key so the smoke test reaches the main screen.
 const lic = await makeTestLicense();
 seedLicense(home, lic.key);
-const electron = join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
+// The electron package exports the path of its binary (electron.exe, or Electron.app/… on macOS).
+const electron = createRequire(import.meta.url)('electron');
 const r = spawnSync(electron, ['.'], { cwd: root, env: { ...process.env, ...lic.env, NAME_ATELIER_HOME: home, NAME_ATELIER_SHOT: shot, NAME_ATELIER_SHOT_JS: readFileSync(join(root, 'tests', 'e2e-smoke.js'), 'utf8') }, timeout: 90000 });
 if (r.status === 3) {
   console.log('e2e skipped: no second monitor (test windows only open on monitor 2)');

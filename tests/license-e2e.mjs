@@ -1,5 +1,6 @@
 // License screen tests on the real app (monitor 2, isolated test homes, throwaway test key).
 // Exit 3 = skipped because there is no second monitor.
+import { createRequire } from 'node:module';
 import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,7 +10,8 @@ import { makeTestLicense, loadLicenseLib } from './helpers/testLicense.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 execSync('node scripts/build.mjs', { cwd: root, stdio: 'ignore' });
-const electron = join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
+// The electron package exports the path of its binary (electron.exe, or Electron.app/… on macOS).
+const electron = createRequire(import.meta.url)('electron');
 const lic = await makeTestLicense();
 const L = await loadLicenseLib();
 const shotsDir = join(root, 'test-output', 'license-e2e');

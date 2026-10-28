@@ -1,0 +1,61 @@
+# macOS build of the USER app (NAME ATELIER). Runs only when started by hand (Actions → macOS build → Run workflow)
+# or for a v* tag, to keep macOS runner minutes low. The admin key generator is Windows-only and never built here;
+# no signing key exists on CI — the app only carries the public key.
+name: macOS build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Engine and license tests
+        run: |
+          npm test
+          npm run test:license
+
+      - name: Name data check
+        run: npm run check:data
+
+      - name: Screen tests (main features, license screen)
+        run: |
+          npm run test:e2e
+          npm run test:license-e2e
+
+      - name: Build macOS app (Apple Silicon + Intel, ad-hoc signed, not notarized)
+        run: npm run dist:mac
+
+      - name: Launch the packaged app
+        run: node tests/launch-packaged.mjs
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: NAME-ATELIER-mac
+          path: |
+            release/*.dmg
+            release/*-mac.zip
+          retention-days: 14
+          if-no-files-found: error

@@ -56,12 +56,13 @@ function createWindow() {
   let pos: { x: number; y: number } | undefined;
   if (shot) {
     const d = screen.getAllDisplays().find((x) => x.id !== screen.getPrimaryDisplay().id);
-    if (!d) {
+    // CI build machines (CI=true) have one screen and nobody working on it, so tests may use it.
+    if (!d && !process.env.CI) {
       console.error('Keygen: 모니터 2를 찾지 못해 시험 실행을 중단합니다.');
       app.exit(3);
       return;
     }
-    pos = { x: d.workArea.x + 80, y: d.workArea.y + 80 };
+    if (d) pos = { x: d.workArea.x + 80, y: d.workArea.y + 80 };
   }
   const win = new BrowserWindow({
     ...(pos ?? {}),
